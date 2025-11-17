@@ -1,0 +1,24 @@
+# PSC-Graph 数据爬取模块依赖清单
+# 生成时间: 2025-11-17
+# 遵循CLAUDE.md规范：锁定版本号确保可重现
+
+# HTTP客户端与网络请求
+requests==2.31.0
+
+# HTML解析
+beautifulsoup4==4.12.0
+lxml==4.9.3
+
+# PDF解析
+pdfplumber==0.10.0
+
+# 数据处理
+pandas==2.1.0
+
+# 配置文件解析
+PyYAML==6.0
+
+# 可选依赖（如果需要更强大的PDF解析能力）
+# camelot-py[cv]==0.11.0  # 需要Java和ghostscript
+# pdf2image==1.16.3       # 需要poppler
+# pytesseract==0.3.10     # OCR引擎，需要tesseract

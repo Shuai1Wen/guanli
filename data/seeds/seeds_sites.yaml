@@ -1,0 +1,76 @@
+# PSC-Graph 数据爬取站点种子配置
+# 生成时间: 2025-11-17
+# 遵循CLAUDE.md规范：仅包含公开政府网站，遵守robots.txt
+
+# ==================== 中央政策 ====================
+central:
+  - name: gov_policy_department
+    list_url: "https://www.gov.cn/zhengce/zhengceku/bmwj/home_{page}.htm"
+    detail_link_selector: "a"
+    start_page: 1
+    max_pages: 10               # 首轮限制，后续可扩展
+    category: "部门文件"
+
+  - name: gov_policy_interpretation
+    list_url: "https://www.gov.cn/zhengce/jiedu/home_{page}.htm"
+    detail_link_selector: "a"
+    start_page: 1
+    max_pages: 5
+    category: "政策解读"
+
+# ==================== 省级政策 ====================
+provinces:
+  - name: 广东省科技厅
+    region: 广东省
+    adcode_prov: 44
+    list_url: "https://gdstc.gd.gov.cn/zwgk_n/zcfg/szcfg/mindex.html"
+    pagination: true
+    pagination_selector: "a:contains('下一页')"
+    detail_link_selector: "a"
+
+  - name: 北京市科委/中关村管委
+    region: 北京市
+    adcode_prov: 11
+    homepage: "https://kw.beijing.gov.cn/"
+    # 待二次分析后补充详细配置
+
+  - name: 上海市科委
+    region: 上海市
+    adcode_prov: 31
+    homepage: "https://stcsm.sh.gov.cn/"
+
+  - name: 浙江省科技厅
+    region: 浙江省
+    adcode_prov: 33
+    homepage: "http://kjt.zj.gov.cn/"
+
+  - name: 江苏省科技厅
+    region: 江苏省
+    adcode_prov: 32
+    homepage: "http://kxjst.jiangsu.gov.cn/"
+
+# ==================== 统计局指标 ====================
+nbs_indicators:
+  # ⚠️ 编码需通过浏览器F12验证
+  # 访问 https://data.stats.gov.cn/easyquery.htm?cn=G0104
+  # 选择指标后查看Network标签的POST请求payload
+  - code: "A0101"
+    name: "地区生产总值"
+    freq: "annual"
+
+  - code: "A0RD01"
+    name: "R&D经费支出"
+    freq: "annual"
+
+  - code: "A0RD02"
+    name: "R&D经费强度"
+    freq: "annual"
+
+  - code: "A0401"
+    name: "规模以上工业增加值"
+    freq: "annual"
+
+# ==================== CNIPA ====================
+cnipa:
+  monthly_index: "https://www.cnipa.gov.cn/col/col3482/"
+  annual_index: "https://www.cnipa.gov.cn/col/col94/"
