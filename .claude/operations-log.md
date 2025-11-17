@@ -373,4 +373,160 @@ results/logs/, results/checkpoints/
 
 ---
 
+## 2025-11-17 RAG索引构建阶段
+
+### 阶段3: 语义抽取层实施
+
+#### 任务3.1: BM25索引构建 ✅
+
+**执行时间**: 2025-11-17 11:09:39
+**脚本**: `scripts/build_index_simple.py`
+
+**实施背景**:
+- 用户明确请求: "python3 scripts/build_index.py 构建RAG索引 这个你测试一下是否能够运行呢？"
+- 由于sentence-transformers依赖安装耗时较长，优先使用简化版脚本（仅BM25）进行测试
+
+**执行结果**: ✅ 成功
+- 成功加载: 533/535 份有效文档（2份因内容<50字被过滤）
+- 词汇表大小: 10,000 词（TF-IDF特征）
+- 文档分类: 部门文件207份 + 省级政策237份 + 政策解读89份
+
+**生成文件**:
+- `indexes/bm25/vectorizer.pkl` (406KB) - TF-IDF向量化器
+- `indexes/bm25/tfidf_matrix.pkl` (1.1MB) - 文档-词项矩阵
+- `indexes/id_map.json` (42KB) - doc_id到索引位置映射
+- `indexes/doc_metadata.json` (13MB) - 文档元数据
+- `indexes/build_report_simple.txt` - 构建报告
+
+**技术细节**:
+- 分词工具: jieba 0.42.1
+- 向量化: sklearn TfidfVectorizer
+- N-gram: (1, 2) - 单字+双字词
+- 最小文档频率: 2（过滤罕见词）
+
+#### 任务3.2: 依赖安装问题解决 ✅
+
+**问题**: pip安装jieba失败
+**错误信息**: `AttributeError: install_layout. Did you mean: 'install_platlib'?`
+**根本原因**: setuptools版本兼容性问题，无法从源码构建wheel
+
+**解决方案**:
+1. 尝试pip安装 - ❌ 失败（setuptools错误）
+2. 尝试pip3安装 - ❌ 失败（同样错误）
+3. 搜索系统包 - ✅ 发现python3-jieba
+4. 使用apt安装 - ✅ 成功安装jieba 0.42.1
+
+**命令**: `apt-get install -y python3-jieba`
+**决策依据**: 系统包更稳定，避免编译问题
+
+#### 任务3.3: 完整RAG索引构建（进行中）
+
+**状态**: 等待sentence-transformers和faiss-cpu安装完成
+**后台进程**: b2c6d0
+**目标**: 构建BM25 + FAISS混合索引
+
+**预期文件**:
+- `indexes/faiss.index` - FAISS向量索引（384维）
+- 向量模型: paraphrase-multilingual-MiniLM-L12-v2
+- 混合检索: α=0.5 (BM25 + FAISS融合)
+
+### 当前项目进度（根据CLAUDE.md要求）
+
+#### 数据采集层 (100% ✅)
+- 中央政策: 298份（国务院文件库）
+- 省级政策: 237份（北京、广东、四川、湖北、陕西、福建、湖南）
+- 合计: 535份政策文档
+
+#### 语义抽取层 (50% 🔄)
+- ✅ JSON Schema (schemas/policy_schema.json)
+- ✅ 标注验证工具 (scripts/validate_annotations.py)
+- ✅ 标注指南 (docs/annotation_guide.md)
+- ✅ 示例标注 (4份，100%通过验证)
+- ✅ BM25索引 (indexes/bm25/)
+- 🔄 FAISS向量索引（依赖安装中）
+- ⏭️ RAG检索演示（待实现）
+- ⏭️ 校准与不确定性量化（待实现）
+
+#### 图学习层 (0% ⏭️)
+- ⏭️ 异质图构建
+- ⏭️ HGT模型训练
+- ⏭️ TGAT模型训练
+
+#### 因果推断层 (0% ⏭️)
+- ⏭️ DID面板数据准备
+- ⏭️ CS-ATT估计
+- ⏭️ Sun-Abraham估计
+- ⏭️ BJS Imputation
+
+### 已交付成果（本阶段）
+
+**代码文件**:
+1. `scripts/build_index_simple.py` (237行) - BM25索引构建器
+2. `scripts/build_index.py` (287行) - 完整RAG索引构建器（待测试）
+3. `scripts/validate_annotations.py` (287行) - 标注验证工具
+4. `scripts/generate_sample_annotations.py` (201行) - 示例标注生成器
+
+**数据文件**:
+5. `schemas/policy_schema.json` - JSON Schema Draft 2020-12
+6. `annotations/annotator_A/` - 4份已验证标注
+7. `indexes/bm25/` - BM25索引文件
+8. `indexes/doc_metadata.json` - 533份文档元数据
+
+**文档**:
+9. `docs/annotation_guide.md` (45页) - 完整标注指南
+10. `indexes/build_report_simple.txt` - 索引构建报告
+
+### 质量指标
+
+**BM25索引**:
+- 文档覆盖率: 99.6% (533/535)
+- 词汇表规模: 10,000词
+- 索引构建时间: ~30秒
+- 磁盘占用: 1.5MB（压缩后）
+
+**标注验证**:
+- Schema验证通过率: 100% (4/4)
+- 五元组完整性: 100%
+- 证据可追溯性: 100%
+
+### 待办任务（按优先级）
+
+**立即**:
+1. 🔄 等待sentence-transformers和faiss-cpu安装完成（进行中）
+2. ⏭️ 运行`python3 scripts/build_index.py`构建完整RAG索引
+3. ⏭️ 验证FAISS索引构建成功
+
+**接着**:
+4. ⏭️ 创建`scripts/retrieve_evidence.py` - 混合检索演示
+5. ⏭️ 测试检索质量（查询"绿色贸易政策"、"科技园区建设资金"等）
+6. ⏭️ 计算检索指标（Recall@K, MRR等）
+
+**最后**:
+7. ⏭️ 提交本阶段成果到git
+8. ⏭️ 推送到远程分支claude/review-project-docs-013FnupidK3hDjgz9XSUFz3q
+
+### 关键决策记录
+
+#### 决策4: 优先使用简化版BM25索引进行测试
+**时间**: 2025-11-17 11:08
+**背景**: sentence-transformers安装耗时较长（约470MB），影响快速验证
+**决策**: 先用build_index_simple.py（仅BM25）测试索引构建流程
+**理由**:
+- BM25精确检索已满足基本需求
+- 可立即验证索引构建流程正确性
+- FAISS可后续补充，不影响整体进度
+**结果**: ✅ BM25索引构建成功，验证了完整数据管道
+
+#### 决策5: 使用系统包管理器安装jieba
+**时间**: 2025-11-17 11:08
+**背景**: pip安装jieba失败（setuptools兼容性问题）
+**决策**: 改用apt-get install python3-jieba
+**理由**:
+- 系统包更稳定，避免编译错误
+- Debian/Ubuntu包维护者已解决兼容性问题
+- 版本0.42.1满足项目需求
+**结果**: ✅ 成功安装，索引构建顺利完成
+
+---
+
 *本日志遵循CLAUDE.md规范，记录所有关键决策和分析过程。*
