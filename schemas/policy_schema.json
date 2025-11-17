@@ -9,7 +9,7 @@
     "doc_id": {
       "type": "string",
       "description": "关联的原始政策文档ID（对应corpus中的doc_id）",
-      "pattern": "^gov_(central|prov)_[a-f0-9]{16}$"
+      "pattern": "^(gov_central|prov_[0-9]{2})_[a-f0-9]{16}$"
     },
     "source_title": {
       "type": "string",

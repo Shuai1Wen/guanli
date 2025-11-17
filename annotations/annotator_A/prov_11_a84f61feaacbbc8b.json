@@ -1,0 +1,126 @@
+{
+  "doc_id": "prov_11_a84f61feaacbbc8b",
+  "source_title": "北京市科学技术委员会、中关村科技园区管理委员会关于征集2025年度中关村示范区高品质科技园区建设第二批项目申报的通知",
+  "source_url": "https://kw.beijing.gov.cn/zwgk/zcwj/202508/t20250815_4174372.html",
+  "annotations": [
+    {
+      "goal": "支持园区产业服务设施建设",
+      "instrument": [
+        "funding",
+        "platform"
+      ],
+      "target_actor": "中关村示范区产业园区投资建设或运营管理单位",
+      "strength": 2,
+      "evidence_spans": [
+        {
+          "start": 285,
+          "end": 387,
+          "from_doc": "policy",
+          "text": "支持园区围绕主导产业，自建、引进或与其他机构、企业共建共享实验室、中试生产线、检验检测平台等产业服务设施，为园区企业提供便利化、开放式的研发、设计、测试、检验、中试等专业化服务"
+        }
+      ],
+      "confidence": 0.92,
+      "region": {
+        "name": "北京市中关村示范区",
+        "admin_code": "11",
+        "uncertain": false
+      },
+      "timeframe": {
+        "effective_date": "2025-08-15"
+      },
+      "support": [
+        {
+          "type": "funding",
+          "note": "依据《中关村国家自主创新示范区促进园区高质量发展支持资金管理办法》提供资金支持"
+        }
+      ]
+    },
+    {
+      "goal": "支持园区公共服务设施建设",
+      "instrument": [
+        "funding",
+        "platform"
+      ],
+      "target_actor": "中关村示范区产业园区",
+      "strength": 2,
+      "evidence_spans": [
+        {
+          "start": 399,
+          "end": 472,
+          "from_doc": "policy",
+          "text": "支持园区新建或升级孵化加速空间、共享展厅、路演厅、高品质公共交流空间、政务服务站点等公共服务设施，不断提升园区公共服务能力"
+        }
+      ],
+      "confidence": 0.90,
+      "region": {
+        "name": "北京市中关村示范区",
+        "admin_code": "11",
+        "uncertain": false
+      },
+      "timeframe": {
+        "effective_date": "2025-08-15"
+      }
+    },
+    {
+      "goal": "支持园区建设新型基础设施，提升智能化管理水平",
+      "instrument": [
+        "funding",
+        "data_compute",
+        "platform"
+      ],
+      "target_actor": "中关村示范区产业园区",
+      "strength": 2,
+      "evidence_spans": [
+        {
+          "start": 484,
+          "end": 627,
+          "from_doc": "policy",
+          "text": "支持园区建设计算中心、算力中心、工业互联网、物联网等信息设施，更好满足园区企业对信息服务的需求。支持园区采用人工智能、区块链、物联网等新一代信息技术，建设园区大脑、数字孪生园区，不断提升园区运营管理的智能化、精细化水平"
+        }
+      ],
+      "confidence": 0.93,
+      "region": {
+        "name": "北京市中关村示范区",
+        "admin_code": "11",
+        "uncertain": false
+      },
+      "timeframe": {
+        "effective_date": "2025-08-15"
+      },
+      "support": [
+        {
+          "type": "other",
+          "note": "支持建设计算中心、算力中心（数据/算力基础设施）"
+        }
+      ]
+    },
+    {
+      "goal": "规范园区项目申报流程，确保申报材料真实合法",
+      "instrument": [
+        "standard"
+      ],
+      "target_actor": "项目申报单位",
+      "strength": 2,
+      "evidence_spans": [
+        {
+          "start": 1243,
+          "end": 1302,
+          "from_doc": "policy",
+          "text": "申报单位应保证提交的项目申报材料真实、合法、有效，对申报材料真实性做出承诺并对此承担法律责任"
+        }
+      ],
+      "confidence": 0.88,
+      "region": {
+        "name": "北京市",
+        "admin_code": "11",
+        "uncertain": false
+      },
+      "timeframe": {
+        "effective_date": "2025-08-15"
+      }
+    }
+  ],
+  "annotator": "annotator_A",
+  "annotated_at": "2025-11-17T10:45:00Z",
+  "notes": "LLM辅助生成的示例标注，基于北京市中关村高品质科技园区建设政策"
+}
