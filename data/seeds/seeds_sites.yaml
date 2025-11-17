@@ -238,10 +238,10 @@ provinces:
   - name: 陕西省科技厅
     region: 陕西省
     adcode_prov: "61"
-    homepage: "http://kjt.shaanxi.gov.cn/"
-    list_url: "http://kjt.shaanxi.gov.cn/zcfg/index.html"
-    max_pages: 5
-    verified: false
+    homepage: "https://kjt.shaanxi.gov.cn/"
+    list_url: "https://kjt.shaanxi.gov.cn/kjdt/tzgg/index_{page}.html"
+    max_pages: 10
+    verified: true
 
   - name: 甘肃省科技厅
     region: 甘肃省

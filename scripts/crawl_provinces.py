@@ -86,10 +86,14 @@ def extract_list_page_generic(html: str, base_url: str, province_name: str) -> L
         # 检查是否包含政策关键词
         has_keyword = any(kw in href.lower() for kw in policy_keywords)
 
+        # 检查是否包含日期模式（如 /2024/, /2025/, ./2024/ 等）
+        import re
+        has_date_pattern = bool(re.search(r'[/.]202[0-9]/', href))
+
         # 检查是否为排除项
         is_excluded = any(kw in href.lower() or kw in text for kw in exclude_keywords)
 
-        if has_keyword and not is_excluded:
+        if (has_keyword or has_date_pattern) and not is_excluded:
             full_url = urljoin(base_url, href)
             # 确保是同域名或政府域名
             parsed = urlparse(full_url)
