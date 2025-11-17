@@ -43,8 +43,8 @@ provinces:
     region: 江苏省
     adcode_prov: "32"
     homepage: "https://kxjst.jiangsu.gov.cn/"
-    list_url: "https://kxjst.jiangsu.gov.cn/col/col66286/index_{page}.html"
-    max_pages: 10
+    list_url: "https://kxjst.jiangsu.gov.cn/module/web/jpage/dataproxy.jsp?page=1&appid=1&webid=89&path=/&columnid=82571&unitid=405695&permissiontype=0"
+    max_pages: 1
     verified: true
 
   - name: 浙江省科技厅
@@ -53,7 +53,7 @@ provinces:
     homepage: "https://kjt.zj.gov.cn/"
     list_url: "https://kjt.zj.gov.cn/col/col1229146335/index_{page}.html"
     max_pages: 10
-    verified: true
+    verified: false  # 暂时无法访问，稍后重试
 
   - name: 山东省科技厅
     region: 山东省
