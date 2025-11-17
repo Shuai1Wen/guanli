@@ -19,14 +19,261 @@ central:
     category: "政策解读"
 
 # ==================== 省级政策 ====================
+# 优先批次1：已验证网站（6个省市）
 provinces:
+  # 华南地区
   - name: 广东省科技厅
     region: 广东省
-    adcode_prov: 44
-    list_url: "https://gdstc.gd.gov.cn/zwgk_n/zcfg/szcfg/mindex.html"
-    pagination: true
-    pagination_selector: "a:contains('下一页')"
-    detail_link_selector: "a"
+    adcode_prov: "44"
+    homepage: "https://gdstc.gd.gov.cn/"
+    list_url: "https://gdstc.gd.gov.cn/zwgk_n/zcfg/szcfg/mindex_{page}.html"
+    max_pages: 10
+    verified: true
+
+  # 华东地区
+  - name: 上海市科技委
+    region: 上海市
+    adcode_prov: "31"
+    homepage: "https://stcsm.sh.gov.cn/"
+    list_url: "https://stcsm.sh.gov.cn/zwgk/zcfg/index_{page}.html"
+    max_pages: 10
+    verified: true
+
+  - name: 江苏省科技厅
+    region: 江苏省
+    adcode_prov: "32"
+    homepage: "https://kxjst.jiangsu.gov.cn/"
+    list_url: "https://kxjst.jiangsu.gov.cn/col/col66286/index_{page}.html"
+    max_pages: 10
+    verified: true
+
+  - name: 浙江省科技厅
+    region: 浙江省
+    adcode_prov: "33"
+    homepage: "https://kjt.zj.gov.cn/"
+    list_url: "https://kjt.zj.gov.cn/col/col1229146335/index_{page}.html"
+    max_pages: 10
+    verified: true
+
+  - name: 山东省科技厅
+    region: 山东省
+    adcode_prov: "37"
+    homepage: "http://kjt.shandong.gov.cn/"
+    list_url: "http://kjt.shandong.gov.cn/col/col8809/index_{page}.html"
+    max_pages: 10
+    verified: true
+
+  - name: 安徽省科技厅
+    region: 安徽省
+    adcode_prov: "34"
+    homepage: "http://kjt.ah.gov.cn/"
+    list_url: "http://kjt.ah.gov.cn/kjzx/tzgg/index_{page}.html"
+    max_pages: 10
+    verified: true
+
+  # 华北地区
+  - name: 北京市科委/中关村管委
+    region: 北京市
+    adcode_prov: "11"
+    homepage: "https://kw.beijing.gov.cn/"
+    list_url: "https://kw.beijing.gov.cn/zwgk/zcwj/zhxwj/index_{page}.html"
+    max_pages: 10
+    verified: true
+
+  # 华中地区
+  - name: 河南省科技厅
+    region: 河南省
+    adcode_prov: "41"
+    homepage: "https://kjt.henan.gov.cn/"
+    list_url: "https://kjt.henan.gov.cn/kjzc/index_{page}.html"
+    max_pages: 10
+    verified: true
+
+  # 西南地区
+  - name: 四川省科技厅
+    region: 四川省
+    adcode_prov: "51"
+    homepage: "https://kjt.sc.gov.cn/"
+    list_url: "https://kjt.sc.gov.cn/scsti/c106286/list_{page}.shtml"
+    max_pages: 10
+    verified: true
+
+  - name: 重庆市科技局
+    region: 重庆市
+    adcode_prov: "50"
+    homepage: "https://kjj.cq.gov.cn/"
+    list_url: "https://kjj.cq.gov.cn/zwgk_176/zwxxgkml/zcfg/dfxfg/index_{page}.html"
+    max_pages: 10
+    verified: true
+
+# 扩展批次2：待验证网站（基于命名规律推测，需要逐个验证）
+  - name: 天津市科技局
+    region: 天津市
+    adcode_prov: "12"
+    homepage: "https://kxj.tj.gov.cn/"
+    list_url: "https://kxj.tj.gov.cn/zwgk/zcwj/index.html"
+    max_pages: 5
+    verified: false
+
+  - name: 河北省科技厅
+    region: 河北省
+    adcode_prov: "13"
+    homepage: "http://kjt.hebei.gov.cn/"
+    list_url: "http://kjt.hebei.gov.cn/col/1483593867869/index.html"
+    max_pages: 5
+    verified: false
+
+  - name: 山西省科技厅
+    region: 山西省
+    adcode_prov: "14"
+    homepage: "http://kjt.shanxi.gov.cn/"
+    list_url: "http://kjt.shanxi.gov.cn/zcfg/index.html"
+    max_pages: 5
+    verified: false
+
+  - name: 内蒙古科技厅
+    region: 内蒙古自治区
+    adcode_prov: "15"
+    homepage: "http://kjt.nmg.gov.cn/"
+    list_url: "http://kjt.nmg.gov.cn/zcfg/index.html"
+    max_pages: 5
+    verified: false
+
+  - name: 辽宁省科技厅
+    region: 辽宁省
+    adcode_prov: "21"
+    homepage: "http://kjt.ln.gov.cn/"
+    list_url: "http://kjt.ln.gov.cn/zwgk/zcfg/index.html"
+    max_pages: 5
+    verified: false
+
+  - name: 吉林省科技厅
+    region: 吉林省
+    adcode_prov: "22"
+    homepage: "http://kjt.jl.gov.cn/"
+    list_url: "http://kjt.jl.gov.cn/zwgk/zcfg/index.html"
+    max_pages: 5
+    verified: false
+
+  - name: 黑龙江省科技厅
+    region: 黑龙江省
+    adcode_prov: "23"
+    homepage: "https://kjt.hlj.gov.cn/"
+    list_url: "https://kjt.hlj.gov.cn/zwgk/zcfg/index.html"
+    max_pages: 5
+    verified: false
+
+  - name: 福建省科技厅
+    region: 福建省
+    adcode_prov: "35"
+    homepage: "http://kjt.fujian.gov.cn/"
+    list_url: "http://kjt.fujian.gov.cn/zwgk/zcfg/index.html"
+    max_pages: 5
+    verified: false
+
+  - name: 江西省科技厅
+    region: 江西省
+    adcode_prov: "36"
+    homepage: "http://kjt.jiangxi.gov.cn/"
+    list_url: "http://kjt.jiangxi.gov.cn/zcfg/index.html"
+    max_pages: 5
+    verified: false
+
+  - name: 湖北省科技厅
+    region: 湖北省
+    adcode_prov: "42"
+    homepage: "http://kjt.hubei.gov.cn/"
+    list_url: "http://kjt.hubei.gov.cn/zcfg/index.html"
+    max_pages: 5
+    verified: false
+
+  - name: 湖南省科技厅
+    region: 湖南省
+    adcode_prov: "43"
+    homepage: "http://kjt.hunan.gov.cn/"
+    list_url: "http://kjt.hunan.gov.cn/kjt/zcfg/index.html"
+    max_pages: 5
+    verified: false
+
+  - name: 广西科技厅
+    region: 广西壮族自治区
+    adcode_prov: "45"
+    homepage: "http://kjt.gxzf.gov.cn/"
+    list_url: "http://kjt.gxzf.gov.cn/zcfg/index.html"
+    max_pages: 5
+    verified: false
+
+  - name: 海南省科技厅
+    region: 海南省
+    adcode_prov: "46"
+    homepage: "http://dost.hainan.gov.cn/"
+    list_url: "http://dost.hainan.gov.cn/dost/zcfg/index.html"
+    max_pages: 5
+    verified: false
+
+  - name: 贵州省科技厅
+    region: 贵州省
+    adcode_prov: "52"
+    homepage: "http://kjt.guizhou.gov.cn/"
+    list_url: "http://kjt.guizhou.gov.cn/zcfg/index.html"
+    max_pages: 5
+    verified: false
+
+  - name: 云南省科技厅
+    region: 云南省
+    adcode_prov: "53"
+    homepage: "http://kjt.yn.gov.cn/"
+    list_url: "http://kjt.yn.gov.cn/zcfg/index.html"
+    max_pages: 5
+    verified: false
+
+  - name: 西藏科技厅
+    region: 西藏自治区
+    adcode_prov: "54"
+    homepage: "http://kjt.xizang.gov.cn/"
+    list_url: "http://kjt.xizang.gov.cn/zcfg/index.html"
+    max_pages: 5
+    verified: false
+
+  - name: 陕西省科技厅
+    region: 陕西省
+    adcode_prov: "61"
+    homepage: "http://kjt.shaanxi.gov.cn/"
+    list_url: "http://kjt.shaanxi.gov.cn/zcfg/index.html"
+    max_pages: 5
+    verified: false
+
+  - name: 甘肃省科技厅
+    region: 甘肃省
+    adcode_prov: "62"
+    homepage: "http://kjt.gansu.gov.cn/"
+    list_url: "http://kjt.gansu.gov.cn/zcfg/index.html"
+    max_pages: 5
+    verified: false
+
+  - name: 青海省科技厅
+    region: 青海省
+    adcode_prov: "63"
+    homepage: "http://kjt.qinghai.gov.cn/"
+    list_url: "http://kjt.qinghai.gov.cn/zcfg/index.html"
+    max_pages: 5
+    verified: false
+
+  - name: 宁夏科技厅
+    region: 宁夏回族自治区
+    adcode_prov: "64"
+    homepage: "http://kjt.nx.gov.cn/"
+    list_url: "http://kjt.nx.gov.cn/zcfg/index.html"
+    max_pages: 5
+    verified: false
+
+  - name: 新疆科技厅
+    region: 新疆维吾尔自治区
+    adcode_prov: "65"
+    homepage: "http://kjt.xinjiang.gov.cn/"
+    list_url: "http://kjt.xinjiang.gov.cn/zcfg/index.html"
+    max_pages: 5
+    verified: false
 
   - name: 北京市科委/中关村管委
     region: 北京市
