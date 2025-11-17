@@ -35,8 +35,8 @@ provinces:
     region: 上海市
     adcode_prov: "31"
     homepage: "https://stcsm.sh.gov.cn/"
-    list_url: "https://stcsm.sh.gov.cn/zwgk/zcfg/index_{page}.html"
-    max_pages: 10
+    list_url: "https://stcsm.sh.gov.cn/zwgk/zcwj/hkwj/index.html"
+    max_pages: 5
     verified: true
 
   - name: 江苏省科技厅

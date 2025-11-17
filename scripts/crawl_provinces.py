@@ -68,7 +68,9 @@ def extract_list_page_generic(html: str, base_url: str, province_name: str) -> L
         # 过滤条件：包含政策相关关键词或路径
         policy_keywords = [
             "zcfg", "policy", "zhengce", "wenjian", "tongzhi",
-            "content", "article", "info", "detail", "view"
+            "content", "article", "info", "detail", "view",
+            "tzgs", "gsgg", "zhtz", "zcwj", "kjzc",  # 上海等地特殊路径
+            "zwgk", "xxgk", "gkml"  # 政务公开相关路径
         ]
 
         # 排除导航、首页、搜索等非内容链接
@@ -114,8 +116,9 @@ def extract_detail_page_generic(html: str, url: str, province_info: Dict[str, An
     title = ""
     title_selectors = [
         ("h1", None),
+        ("div", {"class": "xxgk_content_title"}),  # 上海市
         ("div", {"class": "title"}),
-        ("div", {"class": lambda x: x and "title" in x.lower()}),
+        ("div", {"class": lambda x: x and "title" in str(x).lower()}),
         ("span", {"class": "title"}),
         ("p", {"class": "title"}),
     ]
@@ -136,9 +139,11 @@ def extract_detail_page_generic(html: str, url: str, province_info: Dict[str, An
     content_text = ""
 
     content_selectors = [
+        ("div", {"class": "xxgk_content_nr"}),  # 上海市
+        ("div", {"id": "ivs_content"}),  # 上海市备选
         ("div", {"id": "content"}),
         ("div", {"class": "content"}),
-        ("div", {"class": lambda x: x and "content" in x.lower()}),
+        ("div", {"class": lambda x: x and "content" in str(x).lower()}),
         ("div", {"id": "article"}),
         ("div", {"class": "article"}),
         ("td", {"class": "content"}),
