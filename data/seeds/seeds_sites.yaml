@@ -76,7 +76,7 @@ provinces:
     region: 北京市
     adcode_prov: "11"
     homepage: "https://kw.beijing.gov.cn/"
-    list_url: "https://kw.beijing.gov.cn/zwgk/zcwj/zhxwj/index_{page}.html"
+    list_url: "https://kw.beijing.gov.cn/zwgk/tzgg/index_{page}.html"
     max_pages: 10
     verified: true
 
