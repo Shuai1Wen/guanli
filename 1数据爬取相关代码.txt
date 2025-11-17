@@ -1,0 +1,607 @@
+好的，下面直接给你一套**可运行的第一批爬虫脚本骨架 + 站点种子清单**，严格落在我们之前的仓库结构里（`corpus/`, `data/`, `indexes/` …），并带**节流、断点续爬**与 **CNIPA 月报/年报解析器**。我同时把权威入口放在每个模块顶部注释里，并给出可核验的来源链接（见文内引用）。
+
+---
+
+# 目录与快速开始
+
+```text
+psc-graph-template/
+├─ Makefile                      # 新增 crawl 目标
+├─ scripts/
+│  ├─ crawler_common.py          # 会话、节流、断点
+│  ├─ crawl_gov_central.py       # 国务院政策库（列表+详情）
+│  ├─ crawl_provinces.py         # 省级科技厅（按 seeds 配置）
+│  ├─ fetch_nbs_panel.py         # 统计局“国家数据”接口抓取
+│  ├─ fetch_cnipa_reports.py     # CNIPA 月报/年报下载与解析
+│  └─ parse_cnipa_pdf_tables.py  # PDF 表格解析（pdfplumber/camelot可选）
+├─ data/
+│  ├─ seeds/
+│  │  └─ seeds_sites.yaml        # 站点种子清单（中央+部分省）
+│  ├─ nbs_raw/                   # 统计局原始 JSON 归档
+│  ├─ cnipa_raw/                 # CNIPA 原始 PDF/HTML 归档
+│  ├─ province_codes.csv         # 省名→adcode（省级2位/6位）
+│  ├─ nbs_panel_long.csv         # 统计局规范化长表（示例输出）
+│  └─ cnipa_panel_long.csv       # CNIPA 规范化长表（示例输出）
+├─ corpus/
+│  └─ raw/
+│     ├─ policy_central/         # 中央政策 HTML/JSON
+│     └─ policy_prov/            # 省级政策 HTML/JSON（分省）
+└─ results/
+   └─ logs/                      # 爬取日志
+```
+
+**运行：**
+
+```bash
+make setup
+make crawl        # 一键：中央→省级→统计局→CNIPA
+# 或分别：
+make crawl_gov_central
+make crawl_provinces
+make fetch_nbs
+make fetch_cnipa
+```
+
+---
+
+## Makefile（新增抓取目标）
+
+```makefile
+.PHONY: crawl crawl_gov_central crawl_provinces fetch_nbs fetch_cnipa
+
+crawl: crawl_gov_central crawl_provinces fetch_nbs fetch_cnipa
+
+crawl_gov_central:
+	@. .venv/bin/activate; python3 scripts/crawl_gov_central.py
+
+crawl_provinces:
+	@. .venv/bin/activate; python3 scripts/crawl_provinces.py
+
+fetch_nbs:
+	@. .venv/bin/activate; python3 scripts/fetch_nbs_panel.py
+
+fetch_cnipa:
+	@. .venv/bin/activate; python3 scripts/fetch_cnipa_reports.py
+```
+
+---
+
+## 站点种子清单 `data/seeds/seeds_sites.yaml`
+
+> 仅列“第一批最小闭环”，其余省份后续按同结构扩展。
+> 中央：国务院政策文件库（全部/部门文件）与政策解读。省级：广东（示范），外加北/上/浙/苏若干示范入口。
+> 参考来源：国务院政策文件库与解读栏目、分页样式（`home_X.htm`）、robots.txt、广东省科技厅“省政策法规”分页、中国政府网地方政府网站导航等。([政府网][1])
+
+```yaml
+central:
+  - name: gov_policy_department
+    list_url: "https://www.gov.cn/zhengce/zhengceku/bmwj/home_{page}.htm"   # page 从 1 开始
+    detail_link_selector: "a"   # 简化：实际代码会过滤栏目正文链接
+    start_page: 1
+    max_pages: 5                # 首轮限制页数；后续可拉全量
+    category: "部门文件"
+  - name: gov_policy_interpretation
+    list_url: "https://www.gov.cn/zhengce/jiedu/home_{page}.htm"
+    detail_link_selector: "a"
+    start_page: 1
+    max_pages: 5
+    category: "政策解读"
+
+provinces:
+  - name: 广东省科技厅
+    region: 广东省
+    adcode_prov: 44
+    list_url: "https://gdstc.gd.gov.cn/zwgk_n/zcfg/szcfg/mindex.html" # 有页码导航
+    pagination: true
+    pagination_selector: "a:contains('下一页')"
+    detail_link_selector: "a"  # 脚本中会按栏目正文特征过滤
+  - name: 北京市科委/中关村管委
+    region: 北京市
+    adcode_prov: 11
+    homepage: "https://kw.beijing.gov.cn/"
+  - name: 上海市科委
+    region: 上海市
+    adcode_prov: 31
+    homepage: "https://stcsm.sh.gov.cn/"
+
+nbs_indicators:
+  # 统计局“国家数据” easyquery.htm：示例数据库与编码需在抓取时确定（F12/XHR）
+  # 仅示例：GDP（年度/分省）、R&D经费与强度（年度/分省）
+  - code: "A0101"     # 示例位；运行前请在 data.stats.gov.cn 页面确认实际编码
+    name: "地区生产总值"
+    freq: "annual"
+  - code: "A0RD01"    # 示例位
+    name: "R&D经费支出"
+    freq: "annual"
+  - code: "A0RD02"    # 示例位
+    name: "R&D经费强度"
+    freq: "annual"
+
+cnipa:
+  monthly_index: "https://www.cnipa.gov.cn/col/col3482/"   # 月报年度索引页
+  annual_index:  "https://www.cnipa.gov.cn/col/col94/"     # 年报索引页
+```
+
+> 入口可核验：国务院政策库与解读页、`home_{page}.htm` 分页、`robots.txt` 允许路径、广东省科技厅“省政策法规”分页、统计局 easyquery 页、CNIPA 月报年度索引与年报索引。([政府网][2])
+
+---
+
+## 公共模块 `scripts/crawler_common.py`
+
+```python
+# -*- coding: utf-8 -*-
+"""
+公共组件：节流、重试、断点续爬、存储路径。
+- robots/合规：请确保仅抓取公开页面；www.gov.cn robots.txt 对大部分 2016* 路径 disallow，
+  本项目仅抓取政策栏目与 home_{page}.htm 分页。:contentReference[oaicite:2]{index=2}
+"""
+import os, time, json, hashlib, random, logging
+from pathlib import Path
+import requests
+from requests.adapters import HTTPAdapter, Retry
+
+LOGDIR = Path("results/logs")
+LOGDIR.mkdir(parents=True, exist_ok=True)
+
+def get_session(qps=1.0):
+    s = requests.Session()
+    retries = Retry(total=5, backoff_factor=0.5,
+                    status_forcelist=[429, 500, 502, 503, 504])
+    s.headers.update({
+        "User-Agent": "PSC-Graph/0.1 (+research; contact: policy@psc-graph.org)"
+    })
+    s.mount("http://", HTTPAdapter(max_retries=retries))
+    s.mount("https://", HTTPAdapter(max_retries=retries))
+    s._PSC_SLEEP = 1.0 / max(qps, 0.1)
+    return s
+
+def polite_get(session: requests.Session, url: str, **kwargs):
+    time.sleep(session._PSC_SLEEP + random.random()*0.3)
+    r = session.get(url, timeout=20, **kwargs)
+    r.raise_for_status()
+    return r
+
+def sha256_text(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8", errors="ignore")).hexdigest()
+
+def save_json(obj, path: Path):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(obj, f, ensure_ascii=False, indent=2)
+
+def load_checkpoint(path: Path):
+    if path.exists():
+        return json.load(open(path, "r", encoding="utf-8"))
+    return {}
+
+def save_checkpoint(path: Path, state: dict):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    json.dump(state, open(path, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+
+def init_logger(name="crawler"):
+    logger = logging.getLogger(name)
+    if not logger.handlers:
+        logger.setLevel(logging.INFO)
+        fh = logging.FileHandler(LOGDIR/f"{name}.log", encoding="utf-8")
+        fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
+        fh.setFormatter(fmt); logger.addHandler(fh)
+        sh = logging.StreamHandler(); sh.setFormatter(fmt); logger.addHandler(sh)
+    return logger
+```
+
+---
+
+## 国务院政策库爬虫 `scripts/crawl_gov_central.py`
+
+```python
+# -*- coding: utf-8 -*-
+"""
+抓取：国务院“部门文件”与“政策解读”列表页（home_{page}.htm）与详情页正文。
+入口示例：
+- 部门文件：https://www.gov.cn/zhengce/zhengceku/bmwj/ 及分页 home_1.htm 等。:contentReference[oaicite:3]{index=3}
+- 政策解读：https://www.gov.cn/zhengce/jiedu/home_1.htm。 :contentReference[oaicite:4]{index=4}
+- robots: https://www.gov.cn/robots.txt（遵守允许路径、限速）。 :contentReference[oaicite:5]{index=5}
+"""
+import re, yaml
+from pathlib import Path
+from bs4 import BeautifulSoup
+from crawler_common import get_session, polite_get, sha256_text, save_json, load_checkpoint, save_checkpoint, init_logger
+
+SEEDS = "data/seeds/seeds_sites.yaml"
+OUTDIR = Path("corpus/raw/policy_central")
+CKPT = Path("results/checkpoints/gov_central.json")
+logger = init_logger("gov_central")
+
+def extract_detail_links(html: str):
+    soup = BeautifulSoup(html, "html.parser")
+    links = []
+    for a in soup.select("a"):
+        href = a.get("href", "")
+        text = a.get_text(strip=True)
+        # 过滤：仅收带日期/政策标题的正文链接，排除回到首页/上一页等
+        if href and re.search(r"/\d{4}-\d{2}/\d{2}/content_|/zhengce/.*?/content_", href):
+            links.append(("https://www.gov.cn" + href if href.startswith("/") else href, text))
+    return list(dict.fromkeys(links))
+
+def fetch_detail(session, url):
+    r = polite_get(session, url)
+    soup = BeautifulSoup(r.text, "html.parser")
+    title = soup.find("title").get_text(strip=True) if soup.title else ""
+    time_tag = soup.find("meta", {"name":"publishdate"}) or soup.find("span", class_="date")
+    pub_date = time_tag.get("content") if time_tag and time_tag.has_attr("content") else ""
+    content = "\n".join([p.get_text(" ", strip=True) for p in soup.select("p")])
+    return {
+        "source_url": url, "title": title, "pub_date": pub_date,
+        "content_text": content, "html": r.text, "sha256": sha256_text(content)
+    }
+
+def run():
+    seeds = yaml.safe_load(open(SEEDS, "r", encoding="utf-8"))
+    session = get_session(qps=1.0)  # QPS<=1
+    state = load_checkpoint(CKPT)
+
+    for item in seeds.get("central", []):
+        name, list_tpl = item["name"], item["list_url"]
+        start = int(state.get(name, {}).get("next_page", item.get("start_page",1)))
+        max_pages = item.get("max_pages", 3)
+        logger.info(f"[central] {name} pages {start}..{max_pages}")
+        for page in range(start, max_pages+1):
+            list_url = list_tpl.format(page=page)
+            r = polite_get(session, list_url)
+            links = extract_detail_links(r.text)
+            logger.info(f"[list] {list_url} -> {len(links)} links")
+            for href, text in links[:50]:  # 安全起见首轮限制
+                try:
+                    doc = fetch_detail(session, href)
+                    y = (doc["pub_date"][:4] or "undated")
+                    out = OUTDIR / name / y / (doc["sha256"][:16] + ".json")
+                    save_json(doc, out)
+                except Exception as e:
+                    logger.exception(f"[detail] {href} fail: {e}")
+            state[name] = {"next_page": page+1}
+            save_checkpoint(CKPT, state)
+
+if __name__ == "__main__":
+    run()
+```
+
+---
+
+## 省级爬虫（示例先支持广东）`scripts/crawl_provinces.py`
+
+```python
+# -*- coding: utf-8 -*-
+"""
+示范：广东省科技厅“省政策法规”分页抓取（首页含分页导航）。:contentReference[oaicite:6]{index=6}
+其他省份入口（北京、上海、浙江等）先记录首页，后续按栏目页规则补充。
+"""
+import re, yaml
+from pathlib import Path
+from bs4 import BeautifulSoup
+from urllib.parse import urljoin
+from crawler_common import get_session, polite_get, sha256_text, save_json, load_checkpoint, save_checkpoint, init_logger
+
+SEEDS = "data/seeds/seeds_sites.yaml"
+OUTDIR = Path("corpus/raw/policy_prov")
+CKPT = Path("results/checkpoints/provinces.json")
+logger = init_logger("prov")
+
+def extract_gd_list_links(html, base):
+    soup = BeautifulSoup(html, "html.parser")
+    items = []
+    for a in soup.select("a"):
+        txt = a.get_text(strip=True)
+        href = a.get("href", "")
+        if txt and href and re.search(r"\d{4}-\d{2}-\d{2}", txt):  # 标题 + 日期
+            items.append(urljoin(base, a.get("href")))
+    # 分页“下一页”
+    next_link = None
+    for a in soup.select("a"):
+        if "下一页" in a.get_text():
+            next_link = urljoin(base, a.get("href"))
+            break
+    return list(dict.fromkeys(items)), next_link
+
+def fetch_detail(session, url):
+    r = polite_get(session, url)
+    soup = BeautifulSoup(r.text, "html.parser")
+    title = soup.find("title").get_text(strip=True) if soup.title else ""
+    date = ""
+    for t in soup.find_all(text=True):
+        m = re.search(r"(\d{4}[-./]\d{1,2}[-./]\d{1,2})", t)
+        if m: date = m.group(1); break
+    content = "\n".join([p.get_text(" ", strip=True) for p in soup.select("p")])
+    return {"source_url": url, "title": title, "pub_date": date, "content_text": content, "html": r.text, "sha256": sha256_text(content)}
+
+def run():
+    seeds = yaml.safe_load(open(SEEDS, "r", encoding="utf-8"))
+    session = get_session(qps=0.7)  # 省级站点更慢一些
+    state = load_checkpoint(CKPT)
+
+    for item in seeds.get("provinces", []):
+        if item.get("region") != "广东省":  # 首轮仅跑广东示范
+            continue
+        base = item["list_url"]
+        next_url = state.get("gd", {}).get("next_url", base)
+        seen = set(state.get("gd", {}).get("seen", []))
+        while next_url:
+            html = polite_get(session, next_url).text
+            links, next_url = extract_gd_list_links(html, base)
+            for href in links:
+                if href in seen: continue
+                try:
+                    doc = fetch_detail(session, href)
+                    y = (doc["pub_date"][:4] or "undated")
+                    save_json(doc, OUTDIR / "广东省" / y / (doc["sha256"][:16]+".json"))
+                    seen.add(href)
+                except Exception as e:
+                    logger.exception(f"[gd] {href} fail: {e}")
+            save_checkpoint(CKPT, {"gd": {"next_url": next_url, "seen": list(seen)}})
+
+if __name__ == "__main__":
+    run()
+```
+
+---
+
+## 统计局“国家数据”抓取 `scripts/fetch_nbs_panel.py`
+
+```python
+# -*- coding: utf-8 -*-
+"""
+国家统计局“国家数据” easyquery.htm 前端 JSON 接口（浏览器 XHR 可见；示例数据库代码 G0104/C01 等）。:contentReference[oaicite:7]{index=7}
+注意：这是门户公开接口的“页面内调用”，请低频访问、按指标缓存、保留原始 JSON 以便核验。
+"""
+import json, time, yaml
+from pathlib import Path
+import requests
+import pandas as pd
+from crawler_common import get_session
+
+SEEDS = "data/seeds/seeds_sites.yaml"
+RAW = Path("data/nbs_raw"); RAW.mkdir(parents=True, exist_ok=True)
+OUT = Path("data/nbs_panel_long.csv")
+
+# 典型查询入口：easyquery.htm?cn=G0104 (年度/分省)；具体请求体需根据前端“指标编码/节点ID”构造。
+# 这里给出“示例骨架”——运行前请在浏览器网络面板确认 payload。
+def query_easy(session, db_code="G0104", rowcode="reg", colcode="sj", wds=None, dfwds=None):
+    url = "https://data.stats.gov.cn/easyquery.htm"
+    params = {"cn": db_code, "m": "QueryData"}  # m=QueryData 为常见参数
+    payload = {
+        "dbcode": db_code,
+        "rowcode": rowcode,
+        "colcode": colcode,
+        "wds": wds or [],
+        "dfwds": dfwds or []
+    }
+    r = session.post(url, data={"id": 1, "m": "QueryData", "dbcode": db_code,
+                                "rowcode": rowcode, "colcode": colcode,
+                                "wds": json.dumps(wds or []),
+                                "dfwds": json.dumps(dfwds or [])}, timeout=30)
+    r.raise_for_status()
+    return r.json()
+
+def normalize(json_obj, indicator_code=""):
+    # 按门户返回格式展平为 长表（省/期/值）
+    ret = []
+    nodes = json_obj.get("returndata", {}).get("datanodes", [])
+    wdnodes = json_obj.get("returndata", {}).get("wdnodes", [])
+    # 获取地区/时期维度映射
+    code2name = {}
+    for wd in wdnodes:
+        if wd.get("wdcode") == "reg":
+            for it in wd.get("nodes", []):
+                code2name[it["code"]] = it["name"]
+    for dn in nodes:
+        if not dn.get("data"): continue
+        value = dn["data"].get("strdata") or dn["data"].get("data")
+        # 维度坐标如: [{"wdcode":"zb","valuecode":"A0101"}, {"wdcode":"reg","valuecode":"110000"}, {"wdcode":"sj","valuecode":"2022"}]
+        dims = {d["wdcode"]: d["valuecode"] for d in dn.get("wds", [])}
+        reg, sj = dims.get("reg"), dims.get("sj")
+        ret.append({"province_code": reg, "province_name": code2name.get(reg, ""),
+                    "period": sj, "indicator_code": indicator_code, "value": value})
+    return ret
+
+def run():
+    session = get_session(qps=0.3)
+    seeds = yaml.safe_load(open(SEEDS, "r", encoding="utf-8"))
+    all_rows = []
+    for ind in seeds.get("nbs_indicators", []):
+        code = ind["code"]; name = ind["name"]
+        # ⚠️ 运行前：用浏览器在 https://data.stats.gov.cn/easyquery.htm?cn=G0104 页面确认 dfwds 参数（zb=指标编码, sj=时间范围）
+        dfwds = [{"wdcode": "zb", "valuecode": code}, {"wdcode": "sj", "valuecode": "2009-"}]
+        obj = query_easy(session, db_code="G0104", rowcode="reg", colcode="sj", dfwds=dfwds)
+        Path(RAW/f"{code}.json").write_text(json.dumps(obj, ensure_ascii=False), encoding="utf-8")
+        all_rows.extend(normalize(obj, indicator_code=code))
+        time.sleep(1.0)
+    pd.DataFrame(all_rows).to_csv(OUT, index=False)
+    print(f"[OK] wrote {OUT}")
+
+if __name__ == "__main__":
+    run()
+```
+
+> 门户入口与 easyquery 页面可核验：([国家数据][3])
+
+---
+
+## CNIPA 月报/年报抓取与解析
+
+### 1) PDF 表格解析器 `scripts/parse_cnipa_pdf_tables.py`
+
+```python
+# -*- coding: utf-8 -*-
+"""
+CNIPA 统计月报/年报 PDF 表格解析器骨架：
+- 优先解析“审查注册登记统计月报”中的省份分布表（授权/受理等）。
+- 依赖 pdfplumber（或可选 camelot，需本地装 Java/ghostscript）。
+"""
+import re, pdfplumber, pandas as pd
+from pathlib import Path
+
+def parse_monthly_pdf(pdf_path: Path) -> pd.DataFrame:
+    rows = []
+    with pdfplumber.open(pdf_path) as pdf:
+        for page in pdf.pages:
+            try:
+                table = page.extract_table()
+            except Exception:
+                table = None
+            if not table: continue
+            # 粗略：首行列名；后续可按“省份/合计/单位”等关键字定位
+            header, *data = table
+            # 简化：过滤非省份行
+            for r in data:
+                if not r or not r[0]: continue
+                if not re.search(r"(省|市|自治区|兵团)", r[0]): continue
+                rows.append({"province_name": r[0], "c1": r[1], "c2": r[2], "c3": r[3]})
+    return pd.DataFrame(rows)
+```
+
+### 2) 抓取器 `scripts/fetch_cnipa_reports.py`
+
+```python
+# -*- coding: utf-8 -*-
+"""
+抓取 CNIPA 月报年度索引页 -> 月报 PDF；解析为长表。
+- 月报年度索引页（2025 年度示例栏目）与年报索引：:contentReference[oaicite:9]{index=9}
+"""
+import re, yaml
+from pathlib import Path
+from urllib.parse import urljoin
+from bs4 import BeautifulSoup
+from crawler_common import get_session, polite_get
+from parse_cnipa_pdf_tables import parse_monthly_pdf
+import pandas as pd
+
+SEEDS = "data/seeds/seeds_sites.yaml"
+RAW = Path("data/cnipa_raw"); RAW.mkdir(parents=True, exist_ok=True)
+OUT = Path("data/cnipa_panel_long.csv")
+
+def list_monthly_pdfs(session, year_index_url):
+    """列出年度索引页中的 PDF 链接"""
+    r = polite_get(session, year_index_url)
+    soup = BeautifulSoup(r.text, "html.parser")
+    pdfs = []
+    for a in soup.select("a"):
+        txt = a.get_text(strip=True)
+        href = a.get("href","")
+        if txt.endswith("统计月报.pdf") or href.endswith(".pdf"):
+            pdfs.append(urljoin(year_index_url, href))
+    return list(dict.fromkeys(pdfs))
+
+def run():
+    seeds = yaml.safe_load(open(SEEDS, "r", encoding="utf-8"))
+    monthly_index = seeds["cnipa"]["monthly_index"]  # 年度索引入口
+    session = get_session(qps=0.5)
+
+    # 示例：直接抓取“2025年5月月报”页面（栏目内提供具体月份页）:contentReference[oaicite:10]{index=10}
+    # 也可：先抓年度索引页，再逐月进入详情获取 PDF 链接
+    pdf_links = []
+    # 方式A：已知“5月”页面：
+    pdf_links.extend(list_monthly_pdfs(session, "https://www.cnipa.gov.cn/art/2025/6/16/art_3482_200108.html"))
+    # 方式B：枚举栏目“2025年度”索引页（若列表页即含 PDF 直链则解析）
+    # pdf_links.extend(list_monthly_pdfs(session, monthly_index))
+
+    frames = []
+    for url in pdf_links:
+        fn = RAW / Path(url).name
+        if not fn.exists():
+            fn.write_bytes(polite_get(session, url).content)
+        try:
+            df = parse_monthly_pdf(fn)
+            # 规范化字段：period 从文件名推断（示例）
+            m = re.search(r"(\d{4})年(\d{1,2})月", url)
+            if m:
+                df["period"] = f"{m.group(1)}-{int(m.group(2)):02d}"
+            df["source_url"] = url
+            frames.append(df)
+        except Exception as e:
+            print(f"[WARN] parse fail {url}: {e}")
+
+    if frames:
+        out = pd.concat(frames, ignore_index=True)
+        out.to_csv(OUT, index=False)
+        print(f"[OK] wrote {OUT}")
+    else:
+        print("[INFO] no frames parsed; please adjust parser to table layout.")
+
+if __name__ == "__main__":
+    run()
+```
+
+> 月报栏目（年度/月份页）与年报索引可核验：([国家知识产权局][4])
+
+---
+
+## 省级代码表 `data/province_codes.csv`（示例）
+
+> 省级 2 位/6 位编码用于对齐统计/政策；国家统计局对“统计用区划代码编制规则”有说明，省级代码稳定可用于省级匹配。([政府网][5])
+
+```csv
+province_name,adcode_prov
+北京市,11
+天津市,12
+河北省,13
+山西省,14
+内蒙古自治区,15
+辽宁省,21
+吉林省,22
+黑龙江省,23
+上海市,31
+江苏省,32
+浙江省,33
+安徽省,34
+福建省,35
+江西省,36
+山东省,37
+河南省,41
+湖北省,42
+湖南省,43
+广东省,44
+广西壮族自治区,45
+海南省,46
+重庆市,50
+四川省,51
+贵州省,52
+云南省,53
+西藏自治区,54
+陕西省,61
+甘肃省,62
+青海省,63
+宁夏回族自治区,64
+新疆维吾尔自治区,65
+```
+
+---
+
+# 使用与扩展说明
+
+* **合规/节流**：`get_session(qps=...)` 统一限速 + 重试；中国政府网 `robots.txt` 禁止的目录不触碰，仅抓**政策栏目分页**、**详情页**与**政策解读**；省级站点按栏目页抓取；统计局仅调用**页面内部公开接口**并缓存；CNIPA 抓取**已公开的统计月报/年报 PDF**。([政府网][6])
+* **断点续爬**：`results/checkpoints/*.json` 记录下一页与已抓链接。
+* **落盘格式**：中央/省级均保存 `html` 与 `content_text`，自带 `sha256` 去重；统计与 CNIPA 输出为**长表 CSV**。
+* **后续扩展**：
+
+  1. 省级更多站点：可把栏目页 URL 与“正文链接 CSS 选择器”写入 `seeds_sites.yaml`；
+  2. NBS 指标：用浏览器 F12 定位 `dfwds` 的指标编码与时间窗，追加到 `nbs_indicators`；
+  3. CNIPA PDF 表格：不同期次排版可能变化，`parse_monthly_pdf` 中可按“表头关键字 + 列名映射”增强鲁棒性。
+
+---
+
+## 关键来源（可核验）
+
+* 国务院政策文件库主页与“部门文件”分页、政策解读栏目（`home_{page}.htm`）：([政府网][1])
+* 中国政府网 `robots.txt`：([政府网][6])
+* 广东省科技厅“省政策法规”分页：([广东省科学技术厅][7])
+* 地方政府网站导航（便于扩展省级入口）：([政府网][5])
+* 国家统计局“国家数据” easyquery 页面（年度/月度入口示例）：([国家数据][3])
+* CNIPA “业务工作及综合管理统计月报”年度栏目、“5月月报”页面、年报索引与年报 PDF：([国家知识产权局][4])
+
+
+[1]: https://www.gov.cn/zhengce/zhengcewenjianku/index.htm?utm_source=chatgpt.com "国务院政策文件库_政策_中国政府网"
+[2]: https://www.gov.cn/zhengce/zhengceku/bmwj/?utm_source=chatgpt.com "国务院部门文件_国务院政策文件库_中国政府网"
+[3]: https://data.stats.gov.cn/easyquery.htm?cn=G0104&utm_source=chatgpt.com "国家数据"
+[4]: https://www.cnipa.gov.cn/col/col3482/?utm_source=chatgpt.com "国家知识产权局 2025年度"
+[5]: https://www.gov.cn/home/2023-03/29/content_5748954.htm?utm_source=chatgpt.com "地方政府网站__中国政府网"
+[6]: https://www.gov.cn/robots.txt?utm_source=chatgpt.com "中国政府网 中央人民政府门户网站"
+[7]: https://gdstc.gd.gov.cn/zwgk_n/zcfg/szcfg/mindex.html?utm_source=chatgpt.com "省政策法规_广东省科学技术厅"

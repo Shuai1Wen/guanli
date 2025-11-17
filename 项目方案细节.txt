@@ -1,0 +1,608 @@
+太好了！下面把你要的三样东西一次性给全：**（A）金标标注规范**、**（B）JSON Schema**、**（C）脚本骨架**。
+脚本我以 **Python 为主**，另外给出 **R / Stata** 的最小可运行骨架（便于跑 CS-ATT / Sun–Abraham / BJS 等稳健 DID 估计）。涉及方法论处，我用权威资料作背书并附引用。
+
+---
+
+# A. 金标标注规范（Gold Annotation Guidelines）
+
+> 目标：将中文政策文本标准化为“**政策要素五元组+强度/配套**”结构，并与**证据段落**一一对应，供图谱、因果与评测复用。
+> 背景做法与细节：域/任务继续预训练（DAPT/TAPT）被证明能显著提升特定领域抽取质量；RAG 提供出处与可追溯性；抽取质量建议采用 ARES 等自动化评测配少量人工复核。([ACL Anthology][1])
+
+## A.1 标注对象与粒度
+
+* **对象**：正式发布/解读的政策文本、条例、通知、实施意见等（中央至省市）。
+* **粒度**：以**条款/段落**为最小单元（Clause）。每条 Clause 允许标注多个要素或多个目标-工具对。
+* **可标注要素（必/选）**
+
+  1. 目标/任务 `goal`（必）
+  2. 工具/手段 `instrument`（必）：财政、税收、用地、人才、标准/监管、平台/载体、知识产权、投融资、政府采购、试点示范、数据/算力等（可多选枚举）
+  3. 对象/主体 `target_actor`（必）：企业/高校/科研院所/平台/园区/细分行业
+  4. 地域/覆盖 `region`（可选）：行政区、园区、集群
+  5. 时间/时点 `timeframe`（可选）：生效日、有效期、事件时间（t=0）
+  6. 强度/约束性 `strength`（必）：**0 无约束** / **1 倡议** / **2 一般性** / **3 强约束**（行政/财政约束且有问责或绩效考核）
+  7. 配套 `support`（可选）：资金、税收优惠、名额/指标、土地/能耗/排放额度、审批绿色通道等（金额/比例/额度尽量结构化）
+  8. 证据 `evidence_spans`（必）：原文句子或行号范围
+  9. 置信度 `confidence`（必）：0–1（人工主观置信）
+
+## A.2 标注流程
+
+1. **段落切分**：按条款/小节/句号；保留原始 `span_start, span_end` 偏移。
+2. **先找工具→再找目标**：先识别可执行的工具/约束，再绑定其直接服务的目标/对象。
+3. **强度分级**：
+
+   * 3 强约束：具有硬性条件/考核/问责/明确资金拨付规模或比率；
+   * 2 一般性：有明确执行路径（责任单位/时间表）；
+   * 1 倡议：倡导性/鼓励性，无硬性路径；
+   * 0 无约束：背景/解释性。
+4. **时间标注**：能解析到**首次生效/启动时点**（event time）；滚动修订保留 `revision_of` 与 `revision_date`。
+5. **地域/对象**：优先选择最细粒度（如园区/试点名单），无法确定时填上级行政区并置 `uncertain=true`。
+6. **配套**：资金/税收/审批等数值化记录，缺数字写 `"value": null, "unit": null`，但必须保留证据。
+7. **冲突处理**：多标注人采用“双人标注+仲裁”，保留 `adjudication_note`。
+8. **质量门槛**：
+
+   * 实体/关系 F1≥0.85（开发集）；
+   * ARES 评测：上下文相关性≥0.85、忠实度≥0.90、答案相关性≥0.88（用于抽取质量线）；([arXiv][2])
+   * 一致性（Cohen’s κ）≥0.80；
+   * 校准（温度缩放）ECE≤0.05（面向自动抽取模型的概率输出）。([arXiv][3])
+
+## A.3 边界与例外
+
+* **泛泛而谈**（如“加强创新体系建设”）→ 仅在同段包含可执行工具时才标为 `goal`，否则记为背景（strength=0）。
+* **解读稿**：可用作证据，但标注以**正式条文**为准；解读只做 `supporting_evidence=true`。
+* **模糊地域**（“在部分地区试点”）→ `region={"name":"部分地区","admin_code":null,"uncertain":true}`。
+* **跨条款耦合**：若工具在 A 条，目标在 B 条，分别链接 `cross_refs=[clause_id]`。
+
+---
+
+# B. JSON Schema（用于标注存储与验证）
+
+> 采用 Draft 2020-12；字段命名与上节一致；预留拓展位。
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.org/policy-schema.json",
+  "title": "Policy Semantic Causal Graph Annotation",
+  "type": "object",
+  "required": ["doc_id", "title", "issuer", "pub_date", "clauses"],
+  "properties": {
+    "doc_id": {"type": "string"},
+    "title": {"type": "string"},
+    "issuer": {"type": "string"},           // 发文部门
+    "pub_date": {"type": "string", "format": "date"},
+    "url": {"type": "string"},
+    "region_scope": {
+      "type": "object",
+      "properties": {
+        "name": {"type": "string"},
+        "admin_code": {"type": ["string", "null"]},
+        "uncertain": {"type": "boolean", "default": false}
+      }
+    },
+    "clauses": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["clause_id", "text", "annotations"],
+        "properties": {
+          "clause_id": {"type": "string"},
+          "text": {"type": "string"},
+          "span_start": {"type": "integer"},
+          "span_end": {"type": "integer"},
+          "annotations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["goal", "instrument", "target_actor", "strength", "evidence_spans", "confidence"],
+              "properties": {
+                "goal": {"type": "string"},
+                "instrument": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": ["funding","tax","land","talent","standard","platform","ip","finance","procurement","pilot","data_compute","other"]
+                  }
+                },
+                "instrument_other": {"type": ["string", "null"]},
+                "target_actor": {"type": "string"},
+                "region": {
+                  "type": "object",
+                  "properties": {
+                    "name": {"type": "string"},
+                    "admin_code": {"type": ["string","null"]},
+                    "uncertain": {"type": "boolean", "default": false}
+                  }
+                },
+                "timeframe": {
+                  "type": "object",
+                  "properties": {
+                    "effective_date": {"type": ["string","null"], "format":"date"},
+                    "expiry_date": {"type": ["string","null"], "format":"date"},
+                    "revision_of": {"type": ["string","null"]},
+                    "revision_date": {"type": ["string","null"], "format":"date"}
+                  }
+                },
+                "strength": {"type": "integer", "minimum": 0, "maximum": 3},
+                "support": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "type": {"type": "string", "enum": ["funding","tax","quota","land","energy_quota","emission_quota","fast_track","other"]},
+                      "value": {"type": ["number","null"]},
+                      "unit": {"type": ["string","null"]},
+                      "note": {"type": ["string","null"]}
+                    }
+                  }
+                },
+                "evidence_spans": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": ["start","end"],
+                    "properties": {
+                      "start": {"type": "integer"},
+                      "end": {"type": "integer"},
+                      "from_doc": {"type": "string", "enum": ["policy","interpretation"], "default": "policy"}
+                    }
+                  }
+                },
+                "cross_refs": {
+                  "type": "array",
+                  "items": {"type": "string"}
+                },
+                "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+                "adjudication_note": {"type": ["string","null"]}
+              }
+            }
+          }
+        }
+      }
+    },
+    "meta": {
+      "type": "object",
+      "properties": {
+        "annotators": {"type": "array", "items": {"type": "string"}},
+        "adjudicator": {"type": ["string","null"]},
+        "version": {"type": "string"}
+      }
+    }
+  }
+}
+```
+
+---
+
+# C. 脚本骨架（以 Python 为主）
+
+> 说明：以下代码是**可落地骨架**，涵盖「标注校验→RAG 索引→评测→校准/共形→图谱→因果（含 R/Stata 调用）」全链路。你可以按模块直接落仓。
+> 核心依赖：`pandas`, `jsonschema`, `scikit-learn`, `pyserini`(BM25), `faiss`(向量检索), `torch`, `torch_geometric`, `matplotlib`, `seaborn(可选)`, `rpy2`或`subprocess`（调用 R）等。
+> 方法出处：DAPT/TAPT、RAG、HGT/TGAT、温度缩放、共形预测、DID 稳健估计等。([ACL Anthology][1])
+
+---
+
+## C.1 标注 JSON 校验与一致性评估（Python）
+
+```python
+# validate_annotations.py
+import json, glob
+from jsonschema import validate, Draft202012Validator
+from sklearn.metrics import cohen_kappa_score, precision_recall_fscore_support
+from collections import defaultdict
+
+SCHEMA_PATH = "schemas/policy_schema.json"
+ANNOT_DIR_A = "annotations/annotator_A/*.json"
+ANNOT_DIR_B = "annotations/annotator_B/*.json"
+
+def load_schema():
+    with open(SCHEMA_PATH, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+def validate_file(schema, path):
+    data = json.load(open(path, "r", encoding="utf-8"))
+    errors = sorted(Draft202012Validator(schema).iter_errors(data), key=lambda e: e.path)
+    return data, [str(e) for e in errors]
+
+def flatten_labels(doc):
+    """Extract (clause_id, goal, tuple(sorted(instruments)), target) tuples for agreement."""
+    items = []
+    for c in doc.get("clauses", []):
+        cid = c["clause_id"]
+        for ann in c.get("annotations", []):
+            inst = tuple(sorted(ann.get("instrument", [])))
+            items.append((cid, ann.get("goal","").strip(), inst, ann.get("target_actor","").strip()))
+    return items
+
+def main():
+    schema = load_schema()
+    a_files = sorted(glob.glob(ANNOT_DIR_A))
+    b_files = sorted(glob.glob(ANNOT_DIR_B))
+    # 1) JSON 校验
+    for p in a_files + b_files:
+        _, errs = validate_file(schema, p)
+        if errs:
+            print(f"[INVALID] {p}\n - " + "\n - ".join(errs))
+    # 2) 一致性（示例：以 set 对比 + kappa）
+    kappa_scores = []
+    for pa, pb in zip(a_files, b_files):
+        da,_ = validate_file(schema, pa)
+        db,_ = validate_file(schema, pb)
+        sa = set(flatten_labels(da))
+        sb = set(flatten_labels(db))
+        universe = sorted(list(sa | sb))
+        ya = [1 if x in sa else 0 for x in universe]
+        yb = [1 if x in sb else 0 for x in universe]
+        kappa_scores.append(cohen_kappa_score(ya, yb))
+    print(f"[AGREEMENT] mean Cohen's kappa = {sum(kappa_scores)/max(1,len(kappa_scores)):.3f}")
+
+if __name__ == "__main__":
+    main()
+```
+
+---
+
+## C.2 RAG 索引与证据检索（BM25 + 向量 FAISS）
+
+> Pyserini 提供 Lucene/BM25 的 Python 封装；FAISS 提供高效向量检索。([PyPI][4])
+
+```python
+# build_index.py
+import os, json, faiss, numpy as np
+from tqdm import tqdm
+from sentence_transformers import SentenceTransformer
+from pyserini.index import IndexWriter
+from pyserini.search.lucene import LuceneSearcher
+
+RAW_DIR = "corpus/policy_docs"  # 每个文件一篇政策，字段 {id,title,text}
+BM25_INDEX = "indexes/bm25"
+VEC_INDEX = "indexes/faiss.index"
+EMB_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+
+def iter_docs():
+    for fn in os.listdir(RAW_DIR):
+        if fn.endswith(".json"):
+            yield json.load(open(os.path.join(RAW_DIR, fn), "r", encoding="utf-8"))
+
+def build_bm25():
+    writer = IndexWriter(BM25_INDEX, overwrite=True)
+    with writer:
+        for d in tqdm(iter_docs()):
+            # 将文档作为一个长文本索引；若需句级检索，可预切分后逐条索引
+            writer.add_document(docid=d["id"], contents=d["text"])
+    print("[BM25] done.")
+
+def build_faiss():
+    model = SentenceTransformer(EMB_MODEL)
+    vecs, ids = [], []
+    for d in tqdm(iter_docs()):
+        emb = model.encode([d["text"]], normalize_embeddings=True)
+        vecs.append(emb[0]); ids.append(int(d["id"].split("_")[-1], 16) % (2**31-1))
+    xb = np.vstack(vecs).astype("float32")
+    index = faiss.IndexFlatIP(xb.shape[1])
+    index.add_with_ids(xb, np.array(ids))
+    faiss.write_index(index, VEC_INDEX)
+    json.dump({"map": dict(zip(ids, [d["id"] for d in iter_docs()]))},
+              open("indexes/id_map.json","w",encoding="utf-8"))
+    print("[FAISS] done.")
+
+if __name__ == "__main__":
+    os.makedirs("indexes", exist_ok=True)
+    build_bm25(); build_faiss()
+```
+
+**混合检索与证据对齐：**
+
+```python
+# retrieve_evidence.py
+import json, faiss, numpy as np
+from sentence_transformers import SentenceTransformer
+from pyserini.search.lucene import LuceneSearcher
+
+BM25_INDEX = "indexes/bm25"
+VEC_INDEX = "indexes/faiss.index"
+ID_MAP = json.load(open("indexes/id_map.json","r",encoding="utf-8"))["map"]
+model = SentenceTransformer("sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
+
+def dense_search(query, topk=10):
+    q = model.encode([query], normalize_embeddings=True).astype("float32")
+    index = faiss.read_index(VEC_INDEX)
+    sims, ids = index.search(q, topk)
+    return [(ID_MAP[str(i)], float(s)) for i, s in zip(ids[0], sims[0])]
+
+def bm25_search(query, topk=10):
+    s = LuceneSearcher(BM25_INDEX)
+    hits = s.search(query, k=topk)
+    return [(h.docid, h.score) for h in hits]
+
+def hybrid(query, k=10, alpha=0.5):
+    a = bm25_search(query, k); b = dense_search(query, k)
+    score = {}
+    for did, s in a: score[did] = score.get(did, 0.0) + alpha * s
+    for did, s in b: score[did] = score.get(did, 0.0) + (1-alpha) * s
+    return sorted(score.items(), key=lambda x: x[1], reverse=True)[:k]
+
+if __name__ == "__main__":
+    print(hybrid("对人工智能企业的财政补助与税收优惠", k=5))
+```
+
+> RAG 方法论参考：Lewis et al., 2020。([arXiv][5])
+
+---
+
+## C.3 抽取质量评测 + 温度缩放校准 + 共形预测（Python）
+
+> 温度缩放是简单有效的校准方法；共形预测提供分布无关的覆盖保证。([arXiv][3])
+
+```python
+# calibrate_and_conformal.py
+import numpy as np
+from sklearn.metrics import brier_score_loss
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import train_test_split
+
+class TemperatureScaler:
+    def __init__(self): self.T = 1.0
+    def fit(self, logits, labels):
+        # 简单用一维搜索或最小化 NLL 拟合 T；此处给出网格法骨架
+        Ts = np.linspace(0.5, 5.0, 50); best = (1e9, 1.0)
+        for t in Ts:
+            probs = softmax(logits / t)
+            nll = -np.mean(np.log(probs[np.arange(len(labels)), labels] + 1e-12))
+            if nll < best[0]: best = (nll, t)
+        self.T = best[1]; return self
+    def predict_proba(self, logits):
+        return softmax(logits / self.T)
+
+def softmax(x):
+    e = np.exp(x - x.max(axis=1, keepdims=True)); return e / e.sum(1, keepdims=True)
+
+def expected_calibration_error(probs, labels, M=15):
+    bins = np.linspace(0,1,M+1); ece=0
+    conf = probs.max(1); preds = probs.argmax(1)
+    for i in range(M):
+        idx = (conf>bins[i])&(conf<=bins[i+1])
+        if idx.sum()==0: continue
+        acc = (preds[idx]==labels[idx]).mean()
+        avg_conf = conf[idx].mean()
+        ece += (idx.mean())*abs(acc-avg_conf)
+    return ece
+
+# 简单分类共形：基于校准集的分位数阈值
+def conformal_prediction(probs_calib, y_calib, probs_test, q=0.1):
+    # 采用概率错误分数 s = 1 - p_true；取 (1 - q)*(n+1)/n 分位
+    s_calib = 1 - probs_calib[np.arange(len(y_calib)), y_calib]
+    k = int(np.ceil((1-q)*(len(s_calib)+1))) - 1
+    tau = np.sort(s_calib)[min(max(k,0), len(s_calib)-1)]
+    # 预测集合：{c | 1 - p_c <= tau} ≡ p_c >= 1 - tau
+    sets = (probs_test >= (1 - tau))
+    return sets, tau
+
+if __name__ == "__main__":
+    # logits/y 由抽取或分类模型产生，这里给出接口骨架
+    logits = np.random.randn(1000, 5); y = np.random.randint(0,5,1000)
+    log_tr, log_cal, y_tr, y_cal = train_test_split(logits, y, test_size=0.2, random_state=42)
+    scaler = TemperatureScaler().fit(log_tr, y_tr)
+    p_cal = scaler.predict_proba(log_cal)
+    ece = expected_calibration_error(p_cal, y_cal)
+    print(f"[ECE] {ece:.3f}  (目标 ≤ 0.05)")
+    # 共形覆盖检查
+    logits_test = np.random.randn(200,5)
+    p_test = scaler.predict_proba(logits_test)
+    sets, tau = conformal_prediction(p_cal, y_cal, p_test, q=0.1)  # 90% 目标覆盖
+    print(f"[Conformal] tau={tau:.3f}, avg set size={sets.sum(1).mean():.2f}")
+```
+
+---
+
+## C.4 从标注到异质/时序图（PyG HeteroData + HGT/TGAT）
+
+> HGT/TGAT 是异质与动态/事件时间图表征的常用选择；PyG 提供 `HGTConv` 与 `HeteroData`。([arXiv][6])
+
+```python
+# build_graph_pyg.py
+import json, glob, torch
+from torch_geometric.data import HeteroData
+from torch_geometric.nn import HGTConv, Linear
+import torch.nn.functional as F
+
+def load_anns(paths):
+    for p in glob.glob(paths):
+        yield json.load(open(p, "r", encoding="utf-8"))
+
+def to_heterodata(ann_iter):
+    data = HeteroData()
+    # 1) 先收集节点字典并映射 id→idx
+    policy_ids, actor_ids, region_ids, topic_ids = {}, {}, {}, {}
+    def get_id(mp, k): 
+        if k not in mp: mp[k] = len(mp)
+        return mp[k]
+    edges = {"policy->actor": [], "policy->region": [], "policy->topic": []}
+    for doc in ann_iter:
+        pidx = get_id(policy_ids, doc["doc_id"])
+        for c in doc["clauses"]:
+            for a in c["annotations"]:
+                aidx = get_id(actor_ids, a["target_actor"])
+                edges["policy->actor"].append([pidx, aidx])
+                if a.get("region"): 
+                    ridx = get_id(region_ids, a["region"]["name"])
+                    edges["policy->region"].append([pidx, ridx])
+                # 简化：从 goal 抽关键词当主题
+                t = a["goal"][:12]
+                tidx = get_id(topic_ids, t)
+                edges["policy->topic"].append([pidx, tidx])
+    # 2) 构造 PyG HeteroData
+    data["policy"].num_nodes = len(policy_ids)
+    data["actor"].num_nodes = len(actor_ids)
+    data["region"].num_nodes = len(region_ids)
+    data["topic"].num_nodes = len(topic_ids)
+    # 初始化特征（真实使用应来自文本/统计特征嵌入）
+    for nt in ["policy","actor","region","topic"]:
+        data[nt].x = torch.randn(getattr(data[nt], "num_nodes"), 128)
+    # 边
+    for name, elist in edges.items():
+        src, dst = name.split("->")
+        ei = torch.tensor(elist, dtype=torch.long).t().contiguous()
+        data[(src, "link", dst)].edge_index = ei
+    return data
+
+class HGTModel(torch.nn.Module):
+    def __init__(self, metadata, hidden=128, out=64, heads=2):
+        super().__init__()
+        self.lin = torch.nn.ModuleDict({
+            ntype: Linear(-1, hidden) for ntype in metadata[0]
+        })
+        self.hgt1 = HGTConv(hidden, hidden, metadata, heads=heads)
+        self.hgt2 = HGTConv(hidden, out, metadata, heads=heads)
+    def forward(self, x_dict, edge_index_dict):
+        x_dict = {k: F.gelu(self.lin[k](v)) for k, v in x_dict.items()}
+        x_dict = self.hgt1(x_dict, edge_index_dict)
+        x_dict = {k: F.gelu(v) for k, v in x_dict.items()}
+        x_dict = self.hgt2(x_dict, edge_index_dict)
+        return x_dict
+
+if __name__ == "__main__":
+    data = to_heterodata(load_anns("annotations/adjudicated/*.json"))
+    model = HGTModel(data.metadata())
+    out = model(data.x_dict, data.edge_index_dict)
+    # 示例：用 policy->actor 链路预测可继续添加 LinkPredictor
+```
+
+> HGT/TGAT 原论文与 PyG 文档。([arXiv][6])
+
+---
+
+## C.5 因果：准备面板→调用 R / Stata 跑 CS-ATT / SA / BJS
+
+> **稳健 DID 三件套**：Callaway & Sant’Anna (R `did`)、Sun–Abraham（修正事件研究）、Borusyak–Jaravel–Spiess（`didImputation`）。Stata 可用 `csdid` 与 `did_imputation`。([Asjad Naqvi][7])
+
+### C.5.1 Python：拼接面板与导出
+
+```python
+# prep_panel.py
+import pandas as pd
+
+# 期望列：id(地区或地区×行业), time(年/季), y(结果), treat(0/1), g(first_treat_time 或 0=never)
+panel = pd.read_csv("data/panel_base.csv")
+# 通过标注汇总构造“落地强度”或首次生效时点 g
+policy = pd.read_csv("data/policy_landing.csv")  # columns: id,time,strength
+first_treat = policy[policy["strength"]>0].groupby("id")["time"].min().rename("g")
+panel = panel.merge(first_treat, on="id", how="left").fillna({"g":0})
+panel["treat"] = (panel["time"] >= panel["g"]) & (panel["g"]>0)
+panel.to_csv("data/panel_for_did.csv", index=False)
+print(panel.head())
+```
+
+### C.5.2 R（`did` / `didImputation`）最小脚本（可由 Python 调用）
+
+```r
+# did_run.R
+# args: input_csv, output_prefix
+args <- commandArgs(trailingOnly=TRUE)
+inp <- args[1]; outp <- args[2]
+
+library(did)            # CS-ATT
+library(didimputation)  # BJS
+library(readr); library(dplyr)
+
+dat <- read_csv(inp, show_col_types = FALSE)
+# 假设列名: id, time, y, g (0=never), 还可加入控制变量 x1+x2...
+# 1) CS-ATT
+att <- att_gt(yname="y", tname="time", idname="id", gname="g",
+              data=dat, control_group="nevertreated", est_method="dr")
+agg_es <- aggte(att, type="dynamic")
+write.csv(agg_es$egt, paste0(outp, "_csatt_event.csv"), row.names=FALSE)
+
+# 2) Sun–Abraham 事件研究（via fixest / did2s 亦可，这里给 did 聚合窗口结果）
+#    推荐另行用 fixest::sunab 做回归；此处略。
+
+# 3) BJS 插补
+es_imp <- did_imputation(data=dat, yname="y", idname="id", tname="time", gname="g")
+write.csv(es_imp$overall_att, paste0(outp, "_bjs_overall.csv"), row.names=FALSE)
+```
+
+**Python 调用 R：**
+
+```python
+# run_did_from_python.py
+import subprocess, sys, os
+inp = "data/panel_for_did.csv"; outp = "results/did"
+os.makedirs("results", exist_ok=True)
+cmd = ["Rscript", "did_run.R", inp, outp]
+subprocess.run(cmd, check=True)
+print("[OK] DID results written to results/")
+```
+
+### C.5.3 Stata（`csdid` / `did_imputation`）骨架（可选）
+
+```stata
+* did_run.do
+* 期望数据: id time y g
+clear all
+import delimited using "data/panel_for_did.csv", varnames(1)
+
+* CS-ATT (csdid)
+ssc install csdid, replace
+csdid y, ivar(id) time(time) gvar(g) method(dr) notyet
+estat event, window(-5 5)
+esttab ., cells(b se)
+
+* BJS 插补（did_imputation）
+ssc install did_imputation, replace
+did_imputation y, ivar(id) time(time) gvar(g)
+```
+
+> 文献与工具链接：CS-ATT（R `did`）、Sun–Abraham、BJS 插补、Stata `csdid`/`did_imputation`。([Asjad Naqvi][7])
+
+---
+
+## C.6（可选）标注工具配置与导入
+
+* 如使用 Label Studio，可在单标签文本分类+关系抽取模板上增设**多选择工具 + span 标注**；导出为 JSON 后用 `validate_annotations.py` 校验。
+* RAG 评测建议接入 **ARES**（自动化度量上下文相关/忠实度/答案相关性）；作为自动化门槛与回归测试指标。([arXiv][2])
+
+---
+
+## C.7 安全与治理（落地清单）
+
+* 对检索结果与外部脚本（R/Stata）调用做**沙箱与最小权限**，拦截 Prompt Injection / 过度自主等风险（OWASP LLM Top 10）。([OWASP 基金会][8])
+
+---
+
+# 结尾提示（怎么直接用）
+
+1. 先把 **JSON Schema** 保存到 `schemas/policy_schema.json`，按 **A.1–A.3** 标起来的规范产出几份金标。
+2. 跑 `validate_annotations.py` 校验与一致性；
+3. 用 `build_index.py` / `retrieve_evidence.py` 生成与检索证据；
+4. 抽取模型输出的 logits 走 `calibrate_and_conformal.py` 完成**校准+共形**；
+5. 用 `build_graph_pyg.py` 把标注转为异质图并产出 HGT 表征；
+6. `prep_panel.py` → `run_did_from_python.py` 生成 **CS-ATT / BJS** 结果和事件研究图数据（Sun–Abraham 可按需要另加 `fixest::sunab` 回归脚本）；
+7. 全流程结果写入 `results/` 并在论文/报告中复现。
+
+---
+
+## 关键外部参考
+
+* DAPT/TAPT（“不要停止预训练”）：域/任务继续预训练可显著增益。([arXiv][9])
+* RAG 原始论文：检索增强生成提供出处与更新性。([arXiv][5])
+* ARES：自动化 RAG 评测三维指标。([arXiv][2])
+* HGT / TG(T/N)：异质与动态图学习框架。([arXiv][6])
+* PyG HGTConv 文档。([PyG Documentation][10])
+* BM25 / FAISS：检索与向量索引工具。([PyPI][4])
+* 温度缩放（Guo+2017）与共形预测（Angelopoulos & Bates）。([arXiv][3])
+* 稳健 DID：CS-ATT（R `did`）、Sun–Abraham、BJS 插补；Stata `csdid` / `did_imputation`。([Asjad Naqvi][7])
+* OWASP LLM Top 10（LLM 安全基线）。([OWASP 基金会][8])
+
+---
+
+如果你要，我可以把以上骨架按文件夹结构（`schemas/`, `annotations/`, `corpus/`, `indexes/`, `data/`, `results/`, `scripts/`）整理成一个可直接运行的最小模板，并附上 Makefile / bash 任务流。
+
+[1]: https://aclanthology.org/2020.acl-main.740.pdf?utm_source=chatgpt.com "Don’t Stop Pretraining: Adapt Language Models to Domains and Tasks"
+[2]: https://arxiv.org/abs/2311.09476?utm_source=chatgpt.com "[2311.09476] ARES: An Automated Evaluation Framework for Retrieval ..."
+[3]: https://arxiv.org/abs/1706.04599?utm_source=chatgpt.com "On Calibration of Modern Neural Networks"
+[4]: https://pypi.org/project/pyserini/?utm_source=chatgpt.com "pyserini · PyPI"
+[5]: https://arxiv.org/abs/2005.11401?utm_source=chatgpt.com "Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks"
+[6]: https://arxiv.org/abs/2003.01332?utm_source=chatgpt.com "Heterogeneous Graph Transformer"
+[7]: https://asjadnaqvi.github.io/DiD/cn_docs/code_r/07_did_r/?utm_source=chatgpt.com "did (Callaway和Sant’Anna 2021)"
+[8]: https://owasp.org/www-project-top-10-for-large-language-model-applications/?utm_source=chatgpt.com "OWASP Top 10 for Large Language Model Applications"
+[9]: https://arxiv.org/abs/2004.10964?utm_source=chatgpt.com "Don't Stop Pretraining: Adapt Language Models to Domains and Tasks"
+[10]: https://pytorch-geometric.readthedocs.io/en/latest/generated/torch_geometric.nn.conv.HGTConv.html?utm_source=chatgpt.com "torch_geometric.nn.conv.HGTConv — pytorch_geometric documentation"

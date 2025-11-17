@@ -1,0 +1,226 @@
+下面是一份“从研究设想到可复现实证”的**完整实验设计方案**。我把每个环节都拆成：目标→数据→方法→实现细节→评测→常见风险与规避，并在关键点给出近年权威来源。全方案默认以中国AI相关政策与产业数据为主，可按你的数据可得性微调。
+
+---
+
+# 0. 总体目标与可检验假设
+
+**研究目标**：构建“政策语义→政策意图→产业行为/绩效”的端到端体系（PSC-Graph），打通“认知断裂—行为断裂—评估断裂”。
+
+**核心假设（可检验）**
+H1：面向政策域进行**域适配预训练（DAPT/TAPT）+RAG**的抽取系统，能稳定提升政策要素识别与归类的一致性/准确性，相比纯零样本/少样本LLM有显著改进。([arXiv][1])
+H2：基于**异质+时序图学习（HGT+TGAT）**的政策-产业图谱能提供可解释的语义-行为路径，显著优于同质图或非时序模型。([arXiv][2])
+H3：面向**交错时点政策**的稳健DID管线（CS-ATT / Sun-Abraham / BJS-imputation）能识别政策净效应，并在不同估计器间得到一致的方向与量级（以区间或显著性为准）。([Brantly Callaway][3])
+
+---
+
+# 1. 数据与变量设计
+
+## 1.1 数据来源与范围
+
+* **政策文本**：中央/国务院政策与解读、各省科技厅政策文件（1986–至今）。首选**国务院政策文件库**，并同步省级科技厅官网（如广东省科技厅）做覆盖补充。([国家政府网][4])
+* **产业/宏观指标**：国家统计局“国家数据”门户（地区GDP、R&D等）、官方英文站点（对照术语），并使用**国家知识产权局（CNIPA）**公开专利检索与公告信息。([国家统计局][5])
+
+**时间跨度**：建议以2009–至今为主样本（电子政务与统计口径更稳定），早期文件用于预训练/语料扩充。
+
+## 1.2 变量与标注 Schema
+
+* **政策要素五元组**：〔目标/任务〕、〔工具/手段〕、〔对象/主体〕、〔地域/覆盖范围〕、〔时间/有效期与时点〕；可附加〔强度/约束性〕与〔配套资金/税收、用地、人才等〕作为数值或等级变量。
+* **产业KPI**（面板）：地区-年份粒度（或地区-行业-年份），常用：专利申请/授权量、R&D经费支出强度、企业成立与投融资事件数、产值与就业等（以国家统计局口径优先；专利口径以CNIPA为准）。([国家统计局][5])
+
+**少量人工金标**：抽取500–1000条政策段落做金标（双人标注+仲裁），为抽取/F1评测与误差分析提供基准。
+
+---
+
+# 2. 模块A：政策语义抽取（LLM/RAG）
+
+## 2.1 目标
+
+将非结构化政策文本转为结构化要素与时间化表示，作为图谱与因果环节的输入。
+
+## 2.2 方法与实现
+
+* **域适配预训练（DAPT/TAPT）**：先在大规模政策/法规/解读语料上继续预训练（DAPT），再在本任务小样本上任务自适配（TAPT）。可显著改善专业域迁移。([arXiv][1])
+* **RAG 检索增强**：结合**BM25**（关键词可解释）与**向量召回（FAISS）**的混合检索；召回段落进入抽取/问答链，减少幻觉并保留出处。([Now Publishers][6])
+* **RAG 生成器**：采用标准RAG框架（Lewis et al., 2020），对“要素抽取”与“政策解读问答”分别设计提示词与模板。([arXiv][7])
+* **输出结构**：JSON Schema（见§附录建议）+ 置信分数。
+
+## 2.3 评测与质控
+
+* **抽取评测**：精确率/召回率/F1（实体、关系、归类）；对“强度/约束性”等主观字段，做双人一致性（Cohen’s κ）。
+* **不确定性与校准**：对分类/抽取置信分数做**温度缩放**（ECE与可靠性图），必要时对关键决策输出做**共形预测**给出覆盖率可控的“可能集”。([arXiv][8])
+* **安全与对抗**：按**OWASP LLM Top-10**对Prompt Injection、过度自主（Excessive Agency）进行防护：检索与工具沙箱化、最小权限、输出不直执。([OWASP Gen AI Security Project][9])
+
+## 2.4 常见风险与规避
+
+* 领域迁移不足 → 加强DAPT/TAPT+术语词表；
+* 检索偏差 → BM25（高精）与向量检索（高召回）混合+重排；
+* 幻觉 → 强制“只允许来自检索证据的抽取”，缺证据即拒答。
+
+---
+
+# 3. 模块B：政策-产业异质/时序图谱（PSC-Graph）
+
+## 3.1 目标
+
+把“政策要素—产业主体/技术主题—时点/事件”联结成**异质+时间**图，学习“政策语义→行为路径”。
+
+## 3.2 方法与实现
+
+* **图建模**：
+
+  * 节点：〔政策〕、〔地区〕、〔企业/高校/研究所〕、〔技术主题/IPC〕、〔资金/平台〕等；
+  * 边：发布-适用、资助-受益、约束-对象、共现/相似、时间邻接等（带时间戳与权重）。
+* **图学习**：
+
+  * **HGT**用于异质结构（按节点/边类型做注意力权重与参数化），适配Web/大图；([arXiv][2])
+  * **TGAT**用于时间编码与事件序列（Bochner时间编码，支持新节点归纳）。([arXiv][1])
+  * 训练技巧：浅层+跳连避免过平滑、子图采样、负采样/对比学习提升稀疏边泛化。
+* **任务定义**：
+
+  * 链路预测（政策→主体/主题）、节点表征下游分类（政策类型/强度）、路径可解释性（最短路/注意力权重可视化）。
+
+## 3.3 评测与质控
+
+* 链路预测AUC/平均精度（AP）；
+* 节点分类Macro-F1；
+* 消融：去时序/去异质/去检索证据；
+* 可解释性：高权重路径样例回查到原始证据段落（RAG出处）。
+
+## 3.4 风险与规避
+
+* 图稀疏与类型失衡 → 分层负采样/类型均衡损失；
+* 过平滑/过挤压 → 低层数、残差/跳连、邻域裁剪；
+* 时间泄露 → 严格按时间滚动切分（train<t、valid=t、test>t）。
+
+---
+
+# 4. 模块C：因果识别与政策效应评估
+
+## 4.1 目标
+
+面向“交错实施”的政策，识别净效应，输出总体ATE/分组异质ITE与事件研究图。
+
+## 4.2 方法与实现（估计器与工具链）
+
+* **Callaway & Sant’Anna（CS-ATT）**：多期+异质时点的ATT估计，R **did** 包/文档与教程完整；Stata **csdid** 命令成熟。([Brantly Callaway][3])
+* **Sun & Abraham（SA-event-study）**：修正TWFE在异质效应下的偏误，给出更稳健的事件窗口估计。([科学直通车][10])
+* **Borusyak-Jaravel-Spiess（BJS）插补法**：把**未处理期**作为对照构建反事实，计算ATT并支持事件研究型展示。([arXiv][11])
+
+> 实施建议：三类估计器**并行运行**并报告区间/显著性的一致性（而非追求单一数值）。
+
+## 4.3 研究设计与稳健性
+
+* **面板与处理定义**：按政策落地〔地区×行业×时间〕定义处理与强度（强度可离散分组）。
+* **预趋势检验**：事件研究图中治疗前各期系数应接近0（或不显著）。
+* **协变量与加总**：地区/行业固定效应、宏观趋势、人口/资本/产业结构控制；年份×地区分组趋势备选。
+* **多重稳健**：删除先行试点地区再估；对政策强度分位组做Dose–Response；不同聚类稳健标准误。
+* **可视化**：CS-ATT组-时点ATT热力图，SA/BJS事件窗带置信区间曲线（统一纵轴）。
+
+## 4.4 风险与规避
+
+* 平行趋势存疑 → 采用SA/BJS并报告预趋势；
+* 共同冲击/宏观政策叠加 → 控制并做“去重叠窗口/删敏感期”稳健；
+* 替代性政策联动 → 定义“联合处理”哑变量或多重处理框架。
+
+---
+
+# 5. 模块D：模拟与编排（可选增强）
+
+## 5.1 多Agent流程编排（**工具层**）
+
+* 采用**ReAct**（检索-推理-行动）与**Reflexion**（语言反馈自我改进）只做**流程自动化**：拉取数据→运行抽取→触发因果脚本→汇报图表。避免把Agent当“决策主体”。([arXiv][12])
+* 安全：所有读写在受控沙箱内，遵循**OWASP LLM Top-10**限制外部动作权限。([OWASP Gen AI Security Project][9])
+
+> 若需经济行为模拟，可后续接入外部MARL/ABM，但不纳入首轮投稿主结果，避免评价口径混杂。
+
+---
+
+# 6. 实现细节（工程可复现）
+
+## 6.1 数据管道
+
+* 抓取：政策页面→正文抽取（HTML→文本），保留“链接/发布时间/发文单位”元数据。
+* 存储：文档库（向量+BM25索引）、结构化库（抽取后的JSON）。BM25/FAISS分别负责精确与向量近邻检索。([Now Publishers][6])
+
+## 6.2 训练与推理
+
+* **DAPT/TAPT**：以政策/法规/解读为无标注预训练语料（DAPT），以小样本金标段落做继续预训练/指令微调（TAPT）。([arXiv][1])
+* **图学习**：PyG/DGL实现HGT/TGAT；按季度滚动训练与验证。([arXiv][2])
+* **因果**：R **did** 包与Stata **csdid** 脚本共存；统一输出到可视化报告。([Brantly Callaway][3])
+
+## 6.3 质量与不确定性治理
+
+* 校准：温度缩放+ECE；必要时对“高风险判定”（如强制性/约束性）输出**共形区间**或“需人工复核”标记。([arXiv][8])
+
+## 6.4 安全与合规
+
+* **OWASP LLM Top-10**：Prompt Injection拦截、最小权限、输出不直执、工具沙箱、审计日志。([OWASP Gen AI Security Project][9])
+* 数据合规：使用**国务院/省级科技厅公开文件**与**国家统计局/CNIPA公开数据**，避免个人敏感信息。([国家政府网][4])
+
+---
+
+# 7. 评测方案（统一表）
+
+| 层级    | 任务与指标                                 | 对照/消融                  | 验收口径                                               |
+| ----- | ------------------------------------- | ---------------------- | -------------------------------------------------- |
+| 抽取（A） | 实体/关系 P/R/F1；一致性 κ；证据命中率（来源段落被检索到的比例） | 零样本LLM、无DAPT/TAPT、无RAG | A层F1显著高于对照；证据命中率显著提升（统计检验） ([arXiv][1])            |
+| 图谱（B） | 链路预测AUC/AP、节点分类F1、路径可解释样例回查           | 去时序/去异质/浅层GAT/GCN      | HGT+TGAT显著优于对照，且路径能回查到RAG证据 ([arXiv][2])           |
+| 因果（C） | CS-ATT/SA/BJS 三估计器ATE/事件窗；预趋势检验；稳健误差  | 仅TWFE、删关键控制变量          | 三估计器方向一致且区间重叠；预趋势不显著；多稳健成立 ([Brantly Callaway][3]) |
+| 端到端   | 关键结论复核率、报告复现                          | 去校准/去共形 的对照            | 关键结论具可复核证据；高风险输出附不确定性说明 ([arXiv][8])               |
+
+---
+
+# 8. 最小闭环（6–8周）与资源估算
+
+* **W1–W2**：抓取与清洗（国务院+2–3省份试点），建立BM25/FAISS索引；抽取500–1000条金标。([国家政府网][4])
+* **W3–W4**：DAPT/TAPT+RAG抽取上线；A层评测与误差分析→修模板与本体。([arXiv][1])
+* **W5–W6**：构建异质时序图与HGT/TGAT训练；B层消融与可解释性回查。([arXiv][2])
+* **W7–W8**：CS-ATT/SA/BJS并行估计+稳健性；端到端校准/共形；撰写可复现实验附录与脚本。([Brantly Callaway][3])
+
+**算力**：1–2张24–48GB GPU（抽取/微调/图学习）；CPU内存64–128GB（索引+图采样）。
+
+---
+
+# 9. 开放科学与投稿准备
+
+* 代码与数据字典：公开“抽取模板、对照/消融配置、因果脚本（R did / Stata csdid）与绘图脚本”，附复现Readme。([Brantly Callaway][3])
+* 报告结构：方法→分层结果→误差分析→稳健性→不确定性/安全治理→局限与展望。
+* 伦理声明：仅使用公开数据；对敏感结论提供证据出处与不确定性说明（校准/共形）。
+
+---
+
+## 关键参考（选摘）
+
+* DAPT/TAPT 域适配：Gururangan et al., 2020（ACL）。([arXiv][1])
+* RAG 框架与检索：Lewis et al., 2020；BM25；FAISS。([arXiv][7])
+* 异质/时序图：HGT（KDD 2020）；TGAT（ICLR 2020）。([arXiv][2])
+* DID 稳健估计：R **did**（CS-ATT）；Sun-Abraham；BJS-imputation；Stata **csdid**。([Brantly Callaway][3])
+* 置信与不确定性：温度缩放（Guo et al., ICML 2017）；共形预测教程。([arXiv][8])
+* LLM 安全：OWASP LLM Top-10。([OWASP Gen AI Security Project][9])
+
+---
+
+# 10. 你可以立刻做的事（落地清单）
+
+1. 抽取一批政策样本文档（100–200份）+ 50–100条金标；
+2. 按上面Schema搭RAG原型（BM25+FAISS，保留出处）并跑首轮F1；
+3. 汇集 3–5 年地区-行业-年面板（NBS+CNIPA），定义政策落地与强度；([国家统计局][5])
+4. 先跑CS-ATT与SA两套估计器，对同一政策做事件窗图与预趋势检；([Brantly Callaway][3])
+5. 形成“**抽取证据样例→图谱路径→因果曲线**”的一页式结果页，验证闭环可行。
+
+---
+
+如果你愿意，我可以把**金标标注规范、JSON Schema与R/Stata脚本骨架**也整理出来，直接按上面时间表推进。
+
+[1]: https://arxiv.org/abs/2002.07962?utm_source=chatgpt.com "Inductive Representation Learning on Temporal Graphs"
+[2]: https://arxiv.org/abs/2003.01332?utm_source=chatgpt.com "Heterogeneous Graph Transformer"
+[3]: https://bcallaway11.github.io/did/articles/did-basics.html?utm_source=chatgpt.com "Getting Started with the did Package - Brantly Callaway"
+[4]: https://www.gov.cn/zhengce/zhengceku/gwywj/index.htm?utm_source=chatgpt.com "国务院文件_国务院政策文件库_中国政府网"
+[5]: https://www.stats.gov.cn/sj/?utm_source=chatgpt.com "数据 - 国家统计局"
+[6]: https://www.nowpublishers.com/article/Details/INR-019?utm_source=chatgpt.com "The Probabilistic Relevance Framework: BM25 and Beyond"
+[7]: https://arxiv.org/abs/2005.11401?utm_source=chatgpt.com "Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks"
+[8]: https://arxiv.org/abs/1706.04599?utm_source=chatgpt.com "On Calibration of Modern Neural Networks"
+[9]: https://genai.owasp.org/llm-top-10/?utm_source=chatgpt.com "LLMRisks Archive - OWASP Gen AI Security Project - OWASP Top 10 for LLM ..."
+[10]: https://www.sciencedirect.com/science/article/abs/pii/S030440762030378X?utm_source=chatgpt.com "Estimating dynamic treatment effects in event studies with ..."
+[11]: https://arxiv.org/pdf/2108.12419?utm_source=chatgpt.com "Revisiting Event Study Designs: Robust and Eficient Estimation"
+[12]: https://arxiv.org/abs/2210.03629?utm_source=chatgpt.com "ReAct: Synergizing Reasoning and Acting in Language Models"
