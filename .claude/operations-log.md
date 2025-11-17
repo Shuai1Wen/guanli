@@ -799,6 +799,45 @@ results/logs/, results/checkpoints/
 - 考虑查询扩展或重排序优化MRR和NDCG
 **里程碑**: 语义抽取层100%完成！
 
+#### 决策10: 完成异质图构建脚本
+**时间**: 2025-11-17 15:45
+**任务**: 实现scripts/build_graph_pyg.py，构建异质图数据结构
+**成果**:
+- ✅ 成功安装PyTorch Geometric 2.7.0
+- ✅ 实现GraphBuilder类（异质图构建器）
+- ✅ 从标注数据自动提取节点和边
+- ✅ 生成PyG HeteroData对象
+- ✅ 保存为.pt文件并验证加载
+**图统计**:
+- 节点: 17个 (4 policy + 8 actor + 2 region + 3 funding)
+- 边: 21条 (14 policy→actor + 4 policy→region + 3 policy→funding)
+- 特征: 384维随机向量（占位符，后续可替换为sentence-transformers嵌入）
+**技术实现**:
+- 节点类型: policy, actor, region, topic, funding
+- 边类型: ('policy', 'apply_to', 'actor/region'), ('policy', 'fund', 'funding')
+- 使用HeteroData存储异质图
+- 节点ID映射保证唯一性
+**关键决策**:
+- torch-scatter和torch-sparse编译失败（setuptools版本问题）
+- 决策：暂不安装扩展，PyG核心功能足够支持图构建
+- 后续如需HGT训练，再解决编译问题
+**依赖更新**:
+- torch-geometric==2.7.0添加到requirements.txt
+- torch-scatter和torch-sparse标记为可选依赖
+**上下文摘要**:
+- 创建.claude/context-summary-graph-learning.md
+- 记录PyG HGT API、图构建标准、实施计划
+**质量验证**:
+- ✓ 图构建成功，无错误
+- ✓ 节点和边正确提取（与标注数据一致）
+- ✓ PyG元数据正确：4种节点类型，3种边类型
+- ✓ 图文件保存和加载成功
+**里程碑**: 图学习层基础构建完成（50%）
+**下一步**:
+- 使用sentence-transformers生成真实节点特征
+- 添加时间编码
+- 准备HGT模型训练脚本
+
 ---
 
 *本日志遵循CLAUDE.md规范，记录所有关键决策和分析过程。*
