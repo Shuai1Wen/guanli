@@ -182,10 +182,10 @@ provinces:
   - name: 湖北省科技厅
     region: 湖北省
     adcode_prov: "42"
-    homepage: "http://kjt.hubei.gov.cn/"
-    list_url: "http://kjt.hubei.gov.cn/zcfg/index.html"
-    max_pages: 5
-    verified: false
+    homepage: "https://kjt.hubei.gov.cn/"
+    list_url: "https://kjt.hubei.gov.cn/kjdt/tzgg/index_{page}.shtml"
+    max_pages: 10
+    verified: true
 
   - name: 湖南省科技厅
     region: 湖南省
