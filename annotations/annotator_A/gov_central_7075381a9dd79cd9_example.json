@@ -1,0 +1,73 @@
+{
+  "doc_id": "gov_central_7075381a9dd79cd9",
+  "source_title": "国务院常务会议解读 | 激活绿色贸易新动能，培育国际竞争新优势",
+  "source_url": "https://www.gov.cn/zhengce/202510/content_7044907.htm",
+  "annotations": [
+    {
+      "goal": "完善绿色贸易政策制度体系",
+      "instrument": [
+        "standard",
+        "platform"
+      ],
+      "target_actor": "外贸企业",
+      "strength": 2,
+      "evidence_spans": [
+        {
+          "start": 245,
+          "end": 302,
+          "from_doc": "interpretation",
+          "text": "要加快完善绿色贸易政策制度体系，加强与产业、科技、财税、金融等政策协同配合"
+        }
+      ],
+      "confidence": 0.90,
+      "timeframe": {
+        "effective_date": "2024-10-17"
+      }
+    },
+    {
+      "goal": "提升外贸企业绿色低碳发展能力",
+      "instrument": [
+        "platform",
+        "funding"
+      ],
+      "target_actor": "外贸企业、中小企业",
+      "strength": 2,
+      "evidence_spans": [
+        {
+          "start": 450,
+          "end": 498,
+          "from_doc": "interpretation",
+          "text": "要提升外贸企业绿色低碳发展能力，推动企业开展绿色设计和生产，建设绿色贸易公共服务平台"
+        }
+      ],
+      "confidence": 0.88,
+      "support": [
+        {
+          "type": "other",
+          "note": "建设绿色贸易公共服务平台"
+        }
+      ]
+    },
+    {
+      "goal": "拓展绿色低碳产品、技术和服务进出口",
+      "instrument": [
+        "standard",
+        "platform"
+      ],
+      "target_actor": "外贸企业",
+      "strength": 2,
+      "evidence_spans": [
+        {
+          "start": 720,
+          "end": 783,
+          "from_doc": "interpretation",
+          "text": "拓展相关产品和技术进出口，加强国际交流与沟通，加快建立与国际接轨的绿色低碳产品、技术和服务标准体系"
+        }
+      ],
+      "confidence": 0.85
+    }
+  ],
+  "annotator": "annotator_A",
+  "annotated_at": "2025-11-17T10:15:00Z",
+  "notes": "示例标注：基于国务院常务会议关于绿色贸易的政策解读"
+}
