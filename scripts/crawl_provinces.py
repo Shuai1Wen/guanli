@@ -72,6 +72,7 @@ def extract_list_page_generic(html: str, base_url: str, province_name: str) -> L
             "tzgs", "gsgg", "zhtz", "zcwj", "kjzc",  # 上海等地特殊路径
             "zwgk", "xxgk", "gkml",  # 政务公开相关路径
             "/art/",  # 江苏等地CMS系统的文章路径格式
+            "xzgfxwj", "qtwj", "gstz",  # 四川等地：行政规范性文件、其他文件、公示通知
         ]
 
         # 排除导航、首页、搜索等非内容链接

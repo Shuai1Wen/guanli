@@ -94,8 +94,8 @@ provinces:
     region: 四川省
     adcode_prov: "51"
     homepage: "https://kjt.sc.gov.cn/"
-    list_url: "https://kjt.sc.gov.cn/scsti/c106286/list_{page}.shtml"
-    max_pages: 10
+    list_url: "https://kjt.sc.gov.cn/kjt/xzgfxwj/newschild_{page}.shtml"
+    max_pages: 5
     verified: true
 
   - name: 重庆市科技局
