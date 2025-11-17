@@ -25,12 +25,23 @@ except ImportError:
     print("请运行: pip install torch-geometric")
     exit(1)
 
+try:
+    from sentence_transformers import SentenceTransformer
+except ImportError:
+    print("警告：sentence-transformers未安装")
+    print("将使用随机特征代替文本嵌入")
+    SentenceTransformer = None
+
 
 class GraphBuilder:
     """异质图构建器"""
 
-    def __init__(self):
-        """初始化图构建器"""
+    def __init__(self, use_text_embeddings: bool = True):
+        """初始化图构建器
+
+        Args:
+            use_text_embeddings: 是否使用sentence-transformers生成文本嵌入
+        """
         # 节点字典：{node_type: {node_id: node_data}}
         self.nodes = {
             'policy': {},
@@ -51,6 +62,16 @@ class GraphBuilder:
 
         # 全局计数器
         self.node_counter = defaultdict(int)
+
+        # 文本嵌入模型
+        self.use_text_embeddings = use_text_embeddings and (SentenceTransformer is not None)
+        self.embedding_model = None
+
+        if self.use_text_embeddings:
+            print("正在加载sentence-transformers模型...")
+            # 使用与CLAUDE.md一致的模型：paraphrase-multilingual-MiniLM-L12-v2 (384维)
+            self.embedding_model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
+            print(f"✓ 模型加载成功: {self.embedding_model.get_sentence_embedding_dimension()}维嵌入")
 
     def _get_node_id(self, node_type: str, key: str) -> str:
         """获取或创建节点ID
@@ -249,6 +270,98 @@ class GraphBuilder:
             if edges:
                 print(f"  - {edge_type}: {len(edges)}条")
 
+    def _generate_node_embeddings(self, node_type: str, node_ids: List[str]) -> torch.Tensor:
+        """生成节点文本嵌入
+
+        Args:
+            node_type: 节点类型
+            node_ids: 节点ID列表
+
+        Returns:
+            文本嵌入张量 [num_nodes, embedding_dim]
+        """
+        if not self.use_text_embeddings or self.embedding_model is None:
+            # 如果未启用文本嵌入，返回随机特征
+            num_nodes = len(node_ids)
+            return torch.randn(num_nodes, 384)
+
+        # 提取文本
+        texts = []
+        for node_id in node_ids:
+            node_data = self.nodes[node_type][node_id]
+
+            # 根据节点类型提取文本
+            if node_type == 'policy':
+                # 政策节点：使用标题
+                text = node_data.get('title', '')
+                if not text:
+                    text = f"政策文档 {node_id}"
+            else:
+                # 其他节点：使用名称
+                text = node_data.get('name', '')
+                if not text:
+                    text = f"{node_type} {node_id}"
+
+            texts.append(text)
+
+        # 批量生成嵌入
+        print(f"  正在为 {node_type} 节点生成文本嵌入（{len(texts)}个）...")
+        embeddings = self.embedding_model.encode(
+            texts,
+            convert_to_tensor=True,
+            show_progress_bar=False,
+            batch_size=32
+        )
+
+        # 转换为CPU张量（如果需要）
+        if embeddings.device.type != 'cpu':
+            embeddings = embeddings.cpu()
+
+        return embeddings
+
+    def _generate_time_encoding(self, timestamps: List[str], encoding_dim: int = 32) -> torch.Tensor:
+        """生成时间编码（正弦-余弦编码）
+
+        Args:
+            timestamps: ISO8601格式的时间戳列表
+            encoding_dim: 编码维度（必须是偶数）
+
+        Returns:
+            时间编码张量 [num_nodes, encoding_dim]
+        """
+        if encoding_dim % 2 != 0:
+            raise ValueError("encoding_dim必须是偶数")
+
+        num_nodes = len(timestamps)
+        time_encodings = torch.zeros(num_nodes, encoding_dim)
+
+        # 计算相对时间（以2020-01-01为基准，单位：天）
+        base_date = datetime(2020, 1, 1)
+
+        for i, ts in enumerate(timestamps):
+            if not ts:
+                # 如果时间戳为空，使用零向量
+                continue
+
+            try:
+                # 解析ISO8601时间戳
+                dt = datetime.fromisoformat(ts)
+                # 计算相对天数
+                days = (dt - base_date).days
+
+                # 生成正弦-余弦编码
+                for j in range(encoding_dim // 2):
+                    freq = 1.0 / (10000 ** (2 * j / encoding_dim))
+                    time_encodings[i, 2*j] = np.sin(days * freq)
+                    time_encodings[i, 2*j + 1] = np.cos(days * freq)
+
+            except (ValueError, TypeError) as e:
+                # 如果解析失败，使用零向量
+                print(f"  警告：时间戳解析失败 '{ts}': {e}")
+                continue
+
+        return time_encodings
+
     def build_hetero_data(self) -> HeteroData:
         """构建PyTorch Geometric HeteroData对象
 
@@ -263,11 +376,24 @@ class GraphBuilder:
             node_ids = list(self.nodes[node_type].keys())
             node_id_maps[node_type] = {nid: i for i, nid in enumerate(node_ids)}
 
-            # 初始化节点特征（占位符：随机特征）
+            # 生成节点特征
             num_nodes = len(node_ids)
             if num_nodes > 0:
-                # 使用随机384维特征（后续可替换为sentence-transformers嵌入）
-                data[node_type].x = torch.randn(num_nodes, 384)
+                # 使用sentence-transformers生成文本嵌入
+                text_embeddings = self._generate_node_embeddings(node_type, node_ids)
+
+                # 为policy节点添加时间编码
+                if node_type == 'policy':
+                    # 提取时间戳
+                    timestamps = [self.nodes[node_type][nid].get('timestamp', '') for nid in node_ids]
+                    time_encodings = self._generate_time_encoding(timestamps, encoding_dim=32)
+
+                    # 拼接文本嵌入和时间编码
+                    data[node_type].x = torch.cat([text_embeddings, time_encodings], dim=1)
+                    print(f"  ✓ policy节点特征: 384维文本嵌入 + 32维时间编码 = {data[node_type].x.shape[1]}维")
+                else:
+                    data[node_type].x = text_embeddings
+
                 data[node_type].node_id = node_ids  # 保存原始ID
 
         # 构建边索引
