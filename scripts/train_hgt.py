@@ -15,7 +15,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from pathlib import Path
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Optional
+from dataclasses import dataclass
 import numpy as np
 
 try:
@@ -25,6 +26,39 @@ except ImportError:
     print("错误：PyTorch Geometric未安装")
     print("请运行: pip install torch-geometric")
     exit(1)
+
+
+@dataclass
+class TrainingConfig:
+    """HGT训练配置类
+
+    集中管理所有训练超参数，避免硬编码
+    """
+    # 路径配置
+    graph_path: Path = Path("data/graph_base.pt")
+    output_dir: Path = Path("results")
+
+    # 模型超参数
+    hidden_channels: int = 128
+    num_heads: int = 4
+    num_layers: int = 2
+    dropout: float = 0.2
+
+    # 训练超参数
+    num_epochs: int = 50
+    learning_rate: float = 0.001
+    weight_decay: float = 5e-4
+
+    # 任务配置
+    target_edge_type: Tuple[str, str, str] = ('policy', 'apply_to', 'actor')
+
+    def __post_init__(self):
+        """验证配置参数"""
+        if not (2 <= self.num_layers <= 3):
+            print(f"警告：num_layers={self.num_layers}不符合CLAUDE.md规范（推荐2-3层）")
+
+        if not (0.1 <= self.dropout <= 0.3):
+            print(f"警告：dropout={self.dropout}不符合CLAUDE.md规范（推荐0.1-0.3）")
 
 
 class HGT(nn.Module):
@@ -68,7 +102,11 @@ class HGT(nn.Module):
         self.dropout = dropout
 
         # 输入投影层：每种节点类型独立的投影
-        # 使用-1自动推断输入维度
+        # 维度说明：使用Linear(-1, hidden_channels)自动推断输入维度
+        # - policy节点: 自动推断为416维（384文本+32时间）→ hidden_channels
+        # - 其他节点: 自动推断为384维（仅文本） → hidden_channels
+        # 这种设计允许异质图中不同节点类型有不同的输入维度
+        # PyTorch会在第一次前向传播时自动初始化Linear的权重矩阵
         self.lin_dict = nn.ModuleDict()
         for node_type in node_types:
             self.lin_dict[node_type] = Linear(-1, hidden_channels)
@@ -124,17 +162,34 @@ class HGT(nn.Module):
         return h_dict
 
 
-def load_graph(graph_path: str = "data/graph_base.pt") -> HeteroData:
+def setup_device() -> torch.device:
+    """设置计算设备
+
+    Returns:
+        torch.device对象（cuda或cpu）
+    """
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print(f"使用设备: {device}")
+    if device.type == 'cuda':
+        print(f"  GPU设备: {torch.cuda.get_device_name(0)}")
+        print(f"  显存总量: {torch.cuda.get_device_properties(0).total_memory / 1e9:.2f} GB")
+    return device
+
+
+def load_graph(graph_path: Path) -> HeteroData:
     """加载图数据
 
     Args:
-        graph_path: 图文件路径
+        graph_path: 图文件路径（Path对象）
 
     Returns:
         HeteroData对象
     """
+    if not graph_path.exists():
+        raise FileNotFoundError(f"图文件不存在: {graph_path}")
+
     print(f"正在加载图数据: {graph_path}")
-    data = torch.load(graph_path, weights_only=False)
+    data = torch.load(str(graph_path), weights_only=False)
 
     print(f"✓ 图加载成功")
     print(f"  节点类型: {data.node_types}")
@@ -216,20 +271,14 @@ def train_link_prediction(
 def initialize_model_and_data(
     data: HeteroData,
     device: torch.device,
-    hidden_channels: int = 128,
-    num_heads: int = 4,
-    num_layers: int = 2,
-    dropout: float = 0.2
+    config: TrainingConfig
 ) -> Tuple[HGT, torch.optim.Optimizer, Dict, Dict]:
     """初始化模型、优化器和数据字典
 
     Args:
         data: 图数据
         device: 计算设备
-        hidden_channels: 隐藏层维度
-        num_heads: 注意力头数
-        num_layers: HGT层数
-        dropout: Dropout比例
+        config: 训练配置对象
 
     Returns:
         (model, optimizer, x_dict, edge_index_dict)
@@ -241,10 +290,10 @@ def initialize_model_and_data(
     model = HGT(
         node_types=list(data.node_types),
         edge_types=list(data.edge_types),
-        hidden_channels=hidden_channels,
-        num_heads=num_heads,
-        num_layers=num_layers,
-        dropout=dropout
+        hidden_channels=config.hidden_channels,
+        num_heads=config.num_heads,
+        num_layers=config.num_layers,
+        dropout=config.dropout
     )
     model = model.to(device)
 
@@ -280,7 +329,11 @@ def initialize_model_and_data(
     print(f"  可训练参数: {trainable_params:,}")
 
     # 初始化优化器
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=5e-4)
+    optimizer = torch.optim.Adam(
+        model.parameters(),
+        lr=config.learning_rate,
+        weight_decay=config.weight_decay
+    )
 
     return model, optimizer, x_dict, edge_index_dict
 
@@ -321,19 +374,20 @@ def run_training_loop(
     print(f"\n✓ 训练完成")
 
 
-def save_trained_model(model: HGT, optimizer: torch.optim.Optimizer, output_dir: Path = None):
+def save_trained_model(
+    model: HGT,
+    optimizer: torch.optim.Optimizer,
+    output_dir: Path
+):
     """保存训练好的模型
 
     Args:
         model: HGT模型
         optimizer: 优化器
-        output_dir: 输出目录（默认为results/）
+        output_dir: 输出目录
     """
     print("\n【步骤4】保存模型")
     print("-" * 80)
-
-    if output_dir is None:
-        output_dir = Path("results")
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -347,38 +401,52 @@ def save_trained_model(model: HGT, optimizer: torch.optim.Optimizer, output_dir:
         'num_heads': model.num_heads,
         'num_layers': model.num_layers,
         'dropout': model.dropout,
-    }, model_path)
+    }, str(model_path))
 
     print(f"✓ 模型已保存到: {model_path}")
 
 
-def main():
-    """主函数：演示HGT训练流程"""
+def main(config: Optional[TrainingConfig] = None):
+    """主函数：HGT训练流程
+
+    重构后的main()函数更简洁，所有硬编码参数移至TrainingConfig
+
+    Args:
+        config: 训练配置对象（可选，默认使用默认配置）
+    """
+    # 初始化配置
+    if config is None:
+        config = TrainingConfig()
+
+    # 打印标题
     print("PSC-Graph HGT模型训练")
     print("=" * 80)
 
-    # 设置设备
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(f"\n使用设备: {device}")
+    # 步骤1：设置计算设备
+    print()
+    device = setup_device()
 
-    # 加载图数据
+    # 步骤2：加载图数据
     print("\n【步骤1】加载图数据")
     print("-" * 80)
-    data = load_graph("data/graph_base.pt")
+    data = load_graph(config.graph_path)
     data = data.to(device)
 
-    # 初始化模型和数据
+    # 步骤3：初始化模型
     model, optimizer, x_dict, edge_index_dict = initialize_model_and_data(
-        data, device, hidden_channels=128, num_heads=4, num_layers=2, dropout=0.2
+        data, device, config
     )
 
-    # 训练模型
-    target_edge_type = ('policy', 'apply_to', 'actor')
-    run_training_loop(model, data, x_dict, edge_index_dict, optimizer, target_edge_type, num_epochs=50)
+    # 步骤4：训练模型
+    run_training_loop(
+        model, data, x_dict, edge_index_dict, optimizer,
+        config.target_edge_type, config.num_epochs
+    )
 
-    # 保存模型
-    save_trained_model(model, optimizer)
+    # 步骤5：保存模型
+    save_trained_model(model, optimizer, config.output_dir)
 
+    # 完成
     print("\n" + "=" * 80)
     print("训练完成")
     print("=" * 80)

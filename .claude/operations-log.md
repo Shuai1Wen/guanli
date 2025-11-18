@@ -1435,3 +1435,41 @@ policy_features = torch.cat([text_embeddings, time_encodings], dim=1)  # (N, 416
 ---
 
 *本日志遵循CLAUDE.md规范，记录所有关键决策和分析过程。*
+
+---
+
+## 代码重构优化任务操作日志
+时间: 2025-11-18
+
+### 任务概述
+分析并制定 `train_hgt.py::main()` 和 `calibrate_and_conformal.py::main()` 的重构方案。
+
+### 编码前检查
+
+□ 已查阅上下文摘要文件: .claude/context-summary-refactor-code.md ✓
+□ 项目约定:
+  - 命名规范: snake_case函数，PascalCase类，UPPER_CASE常量 ✓
+  - 文件组织: Path(__file__).parent.parent获取项目根 ✓
+  - 导入顺序: 标准库 → 第三方库 → 项目模块 ✓
+  - 代码风格: 中文注释，类型注解，详细docstring ✓
+□ 确认不重复造轮子:
+  - 检查了 demo_graph_workflow.py (函数拆分模式) ✓
+  - 检查了 prep_panel.py (类方法模式) ✓
+  - 检查了 validate_annotations.py (类方法模式) ✓
+  - 确认项目中已有多种拆分模式可参考 ✓
+
+### 关键发现
+
+**发现1**: 两个文件的main函数**已经充分拆分**
+- train_hgt.py: 4个子函数覆盖加载、初始化、训练、保存
+- calibrate_and_conformal.py: 5个子函数覆盖数据生成到可靠性图
+
+**发现2**: 真正的问题不是"需要拆分"，而是"需要优化"
+- 配置参数硬编码
+- 路径处理不统一
+- 缺少配置文件支持
+
+**发现3**: 继续拆分可能导致过度工程化
+- 参数传递会变得复杂
+- 降低代码可读性
+- 违反"简单优于复杂"原则
