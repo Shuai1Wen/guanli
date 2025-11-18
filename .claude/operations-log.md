@@ -922,4 +922,77 @@ results/logs/, results/checkpoints/
 
 ---
 
+## 2025-11-17 依赖问题深度分析与解决
+
+### 问题现状
+
+**关键依赖缺失**: torch-scatter / torch-sparse
+- **影响**: HGTConv无法运行（内部依赖这些库的高效稀疏操作）
+- **表现**: KeyError: 'policy' in HGTConv.forward()
+- **已尝试方案**:
+  1. 从源码编译 → AttributeError: install_layout（setuptools 68.1.2兼容性问题）
+  2. 预编译wheel → 找不到torch 2.9.1+cpu匹配版本
+
+**环境信息**:
+- setuptools: 68.1.2 (当前) → 80.9.0 (最新可用)
+- torch: 2.9.1
+- torch-geometric: 2.7.0
+
+### 解决方案分析
+
+#### 方案1: 升级setuptools后重新编译 ⭐（优先尝试）
+**理由**:
+- 最直接的修复方法
+- 保持torch 2.9.1不变（避免大规模依赖变更）
+- install_layout错误是setuptools API变更导致
+- setuptools 68.1.2 → 80.9.0跨越12个大版本，API可能已修复
+
+**操作步骤**:
+1. 升级setuptools到80.9.0
+2. 重新尝试从源码编译torch-scatter和torch-sparse
+3. 验证HGT训练脚本是否可运行
+
+**风险评估**:
+- 低风险：setuptools升级通常向后兼容
+- 可回滚：如失败可降级回68.1.2
+
+#### 方案2: 降级torch到2.4/2.5（预编译wheel可用）
+**理由**:
+- torch 2.4和2.5有PyG官方预编译wheel
+- 避免编译问题
+- 稳定性高
+
+**缺点**:
+- 需要重新安装torch及其生态（时间成本高）
+- 可能与其他已安装包产生版本冲突
+- sentence-transformers可能需要重新验证
+
+#### 方案3: Docker环境（最保险但成本高）
+**理由**:
+- 完全隔离的环境
+- 可使用PyG官方Docker镜像
+
+**缺点**:
+- 需要额外配置Docker环境
+- 数据和代码需要挂载
+- 本地文件访问复杂化
+
+#### 方案4: 等待PyG官方支持（不可控）
+**缺点**:
+- 等待时间不可控
+- 项目进度受阻
+
+### 决策13: 优先尝试方案1（升级setuptools）
+**时间**: 2025-11-17 18:00
+**决策**: 先升级setuptools到80.9.0，重新编译torch-scatter/torch-sparse
+**理由**:
+- 最低成本、最直接的解决方案
+- 不影响现有torch和sentence-transformers环境
+- 如失败，可快速切换到方案2（降级torch）
+**验证标准**:
+- 成功标志：HGT训练脚本无错误运行至少1个epoch
+- 失败标志：编译仍然报错或运行时新错误
+
+---
+
 *本日志遵循CLAUDE.md规范，记录所有关键决策和分析过程。*
