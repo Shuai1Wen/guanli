@@ -179,19 +179,22 @@ class GraphBuilder:
 
         self.edges[edge_type].append((src_id, dst_id, attrs))
 
-    def load_from_annotations(self, annotations_dir: str = "annotations/annotator_A"):
+    def load_from_annotations(self, annotations_dir: Path = None):
         """从标注数据加载图结构
 
         Args:
-            annotations_dir: 标注文件目录
+            annotations_dir: 标注文件目录（Path对象，默认为annotations/annotator_A）
         """
-        annotations_path = Path(annotations_dir)
+        if annotations_dir is None:
+            annotations_dir = Path("annotations/annotator_A")
+        elif isinstance(annotations_dir, str):
+            annotations_dir = Path(annotations_dir)
 
-        if not annotations_path.exists():
+        if not annotations_dir.exists():
             print(f"错误：标注目录不存在: {annotations_dir}")
             return
 
-        json_files = list(annotations_path.glob("*.json"))
+        json_files = list(annotations_dir.glob("*.json"))
         print(f"正在加载标注文件: {len(json_files)}个")
 
         for json_file in json_files:
@@ -433,19 +436,23 @@ class GraphBuilder:
 
         return data
 
-    def save_graph(self, output_path: str = "data/graph_base.pt"):
+    def save_graph(self, output_path: Path = None):
         """保存图到文件
 
         Args:
-            output_path: 输出文件路径
+            output_path: 输出文件路径（Path对象，默认为data/graph_base.pt）
         """
-        output_file = Path(output_path)
-        output_file.parent.mkdir(parents=True, exist_ok=True)
+        if output_path is None:
+            output_path = Path("data/graph_base.pt")
+        elif isinstance(output_path, str):
+            output_path = Path(output_path)
+
+        output_path.parent.mkdir(parents=True, exist_ok=True)
 
         data = self.build_hetero_data()
-        torch.save(data, output_file)
+        torch.save(data, str(output_path))
 
-        print(f"✓ 图已保存到: {output_file}")
+        print(f"✓ 图已保存到: {output_path}")
         return data
 
 
@@ -460,7 +467,7 @@ def main():
     # 从标注数据加载
     print("\n【步骤1】从标注数据加载节点和边")
     print("-" * 80)
-    builder.load_from_annotations("annotations/annotator_A")
+    builder.load_from_annotations(Path("annotations/annotator_A"))
 
     # 构建HeteroData
     print("\n【步骤2】构建PyG HeteroData对象")
@@ -488,13 +495,14 @@ def main():
     # 保存图
     print("\n【步骤4】保存图到文件")
     print("-" * 80)
-    builder.save_graph("data/graph_base.pt")
+    graph_path = Path("data/graph_base.pt")
+    builder.save_graph(graph_path)
 
     # 验证加载
     print("\n【步骤5】验证图加载")
     print("-" * 80)
     # PyTorch 2.6+需要weights_only=False来加载自定义类
-    loaded_data = torch.load("data/graph_base.pt", weights_only=False)
+    loaded_data = torch.load(str(graph_path), weights_only=False)
     print(f"✓ 图加载成功")
     print(f"  元数据: {loaded_data.metadata()}")
 

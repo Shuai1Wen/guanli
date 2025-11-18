@@ -15,7 +15,46 @@ PSC-Graph 校准与不确定性量化
 import numpy as np
 from typing import List, Tuple, Dict, Optional
 from pathlib import Path
+from dataclasses import dataclass
 import json
+
+
+@dataclass
+class CalibrationConfig:
+    """校准配置类
+
+    集中管理所有校准参数，避免硬编码
+    """
+    # 数据配置
+    n_samples: int = 1000
+    n_classes: int = 5
+    random_seed: int = 42
+    split_ratio: float = 0.5  # 校准集/测试集划分比例
+
+    # 温度缩放参数
+    max_iter: int = 50
+    learning_rate: float = 0.01
+
+    # 共形预测参数
+    alpha: float = 0.1  # 显著性水平（1-α = 覆盖率）
+
+    # 可靠性图参数
+    n_bins: int = 10
+
+    # 输出路径
+    output_dir: Path = Path("results")
+    save_reliability_diagram: bool = False
+
+    def __post_init__(self):
+        """验证配置参数"""
+        if not (0.0 < self.alpha < 1.0):
+            raise ValueError(f"alpha必须在(0, 1)区间，当前值: {self.alpha}")
+
+        if not (0.0 < self.split_ratio < 1.0):
+            raise ValueError(f"split_ratio必须在(0, 1)区间，当前值: {self.split_ratio}")
+
+        # 确保输出目录存在
+        self.output_dir.mkdir(parents=True, exist_ok=True)
 
 
 class TemperatureScaling:
@@ -276,34 +315,32 @@ class CalibrationMetrics:
         return result
 
 
-def generate_mock_data(n_samples: int = 1000, n_classes: int = 5, random_seed: int = 42):
+def generate_mock_data(config: CalibrationConfig):
     """生成模拟校准数据
 
     Args:
-        n_samples: 样本数
-        n_classes: 类别数
-        random_seed: 随机种子
+        config: 校准配置对象
 
     Returns:
-        (cal_logits, test_logits, cal_labels, test_labels, n_classes)
+        (cal_logits, test_logits, cal_labels, test_labels)
     """
-    np.random.seed(random_seed)
+    np.random.seed(config.random_seed)
 
     # 模拟未校准的logits（过度自信）
-    logits = np.random.randn(n_samples, n_classes) * 2
-    labels = np.random.randint(0, n_classes, n_samples)
+    logits = np.random.randn(config.n_samples, config.n_classes) * 2
+    labels = np.random.randint(0, config.n_classes, config.n_samples)
 
     # 分割为校准集和测试集
-    split = int(0.5 * n_samples)
+    split = int(config.split_ratio * config.n_samples)
     cal_logits, test_logits = logits[:split], logits[split:]
     cal_labels, test_labels = labels[:split], labels[split:]
 
     print(f"\n数据集划分:")
     print(f"  校准集: {len(cal_labels)} 样本")
     print(f"  测试集: {len(test_labels)} 样本")
-    print(f"  类别数: {n_classes}")
+    print(f"  类别数: {config.n_classes}")
 
-    return cal_logits, test_logits, cal_labels, test_labels, n_classes
+    return cal_logits, test_logits, cal_labels, test_labels
 
 
 def evaluate_uncalibrated_model(test_logits: np.ndarray, test_labels: np.ndarray) -> float:
@@ -420,20 +457,29 @@ def perform_conformal_prediction(
     return cp
 
 
-def print_reliability_diagram(cal_probs: np.ndarray, test_labels: np.ndarray, n_bins: int = 10):
+def print_reliability_diagram(
+    cal_probs: np.ndarray,
+    test_labels: np.ndarray,
+    config: CalibrationConfig
+):
     """打印可靠性图统计
 
     Args:
         cal_probs: 校准后概率
         test_labels: 测试集标签
-        n_bins: 分箱数量
+        config: 校准配置对象
     """
     print("\n" + "=" * 80)
     print("【4】可靠性图统计")
     print("=" * 80)
 
+    # 可选保存路径
+    save_path = None
+    if config.save_reliability_diagram:
+        save_path = config.output_dir / "reliability_diagram.json"
+
     reliability = CalibrationMetrics.plot_reliability_diagram(
-        cal_probs, test_labels, n_bins=n_bins
+        cal_probs, test_labels, n_bins=config.n_bins, save_path=save_path
     )
 
     print(f"分箱数: {reliability['n_bins']}")
@@ -451,33 +497,96 @@ def print_reliability_diagram(cal_probs: np.ndarray, test_labels: np.ndarray, n_
             f"{stat['gap']:<10.4f}"
         )
 
+    if save_path and save_path.exists():
+        print(f"\n✓ 可靠性图统计已保存到: {save_path}")
 
-def demo_calibration():
-    """演示校准流程"""
+
+def print_summary(
+    ece_before: float,
+    ece_after: float,
+    coverage: float,
+    config: CalibrationConfig
+):
+    """打印校准结果总结
+
+    Args:
+        ece_before: 校准前ECE
+        ece_after: 校准后ECE
+        coverage: 共形预测覆盖率
+        config: 校准配置对象
+    """
+    print("\n" + "=" * 80)
+    print("【总结】校准结果")
+    print("=" * 80)
+
+    # ECE改善
+    improvement = ece_before - ece_after
+    improvement_pct = (1 - ece_after / ece_before) * 100 if ece_before > 0 else 0
+    print(f"\n温度缩放校准:")
+    print(f"  校准前ECE: {ece_before:.4f}")
+    print(f"  校准后ECE: {ece_after:.4f}")
+    print(f"  改善幅度: {improvement:.4f} ({improvement_pct:.1f}%)")
+
+    # CLAUDE.md要求检查
+    ece_pass = "✓" if ece_after <= 0.05 else "✗"
+    print(f"  {ece_pass} ECE ≤ 0.05: {'通过' if ece_after <= 0.05 else '未通过'}")
+
+    # 共形预测
+    target_coverage = 1 - config.alpha
+    coverage_pass = "✓" if coverage >= target_coverage else "✗"
+    print(f"\n共形预测:")
+    print(f"  目标覆盖率: ≥ {target_coverage*100:.0f}%")
+    print(f"  实际覆盖率: {coverage*100:.1f}%")
+    print(f"  {coverage_pass} 覆盖率检查: {'通过' if coverage >= target_coverage else '未通过'}")
+
+    # 综合结论
+    all_pass = (ece_after <= 0.05) and (coverage >= target_coverage)
+    print(f"\n综合评定: {'✓ 全部通过' if all_pass else '✗ 部分未通过'}")
+    if all_pass:
+        print("满足CLAUDE.md所有要求")
+
+
+def demo_calibration(config: Optional[CalibrationConfig] = None):
+    """演示校准流程
+
+    重构后的主函数更简洁，使用配置对象管理参数
+
+    Args:
+        config: 校准配置对象（可选，默认使用默认配置）
+    """
+    # 初始化配置
+    if config is None:
+        config = CalibrationConfig()
+
+    # 打印标题
     print("PSC-Graph 校准与不确定性量化演示")
     print("=" * 80)
 
-    # 生成模拟数据
-    cal_logits, test_logits, cal_labels, test_labels, n_classes = generate_mock_data(
-        n_samples=1000, n_classes=5, random_seed=42
-    )
+    # 步骤1：生成模拟数据
+    cal_logits, test_logits, cal_labels, test_labels = generate_mock_data(config)
 
-    # 1. 评估未校准模型
+    # 步骤2：评估未校准模型
     ece_before = evaluate_uncalibrated_model(test_logits, test_labels)
 
-    # 2. 温度缩放校准
-    ts, ece_after = perform_temperature_scaling(cal_logits, cal_labels, test_logits, test_labels)
+    # 步骤3：温度缩放校准
+    ts, ece_after = perform_temperature_scaling(
+        cal_logits, cal_labels, test_logits, test_labels
+    )
 
-    # 打印改善情况
-    print(f"ECE改善: {(ece_before - ece_after):.4f} ({(1 - ece_after/ece_before)*100:.1f}%)")
+    # 步骤4：共形预测
+    cp = perform_conformal_prediction(
+        ts, cal_logits, cal_labels, test_logits, test_labels, alpha=config.alpha
+    )
+    coverage = cp.compute_coverage(ts.transform(test_logits), test_labels)
 
-    # 3. 共形预测
-    cp = perform_conformal_prediction(ts, cal_logits, cal_labels, test_logits, test_labels, alpha=0.1)
-
-    # 4. 可靠性图
+    # 步骤5：可靠性图
     cal_probs = ts.transform(test_logits)
-    print_reliability_diagram(cal_probs, test_labels, n_bins=10)
+    print_reliability_diagram(cal_probs, test_labels, config)
 
+    # 步骤6：总结
+    print_summary(ece_before, ece_after, coverage, config)
+
+    # 完成
     print("\n" + "=" * 80)
     print("演示完成")
     print("=" * 80)
