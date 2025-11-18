@@ -1020,6 +1020,62 @@ results/logs/, results/checkpoints/
 5. 验证sentence-transformers仍可用
 6. 测试HGT训练脚本
 
+**执行状态**: 进行中（用户要求暂停，优先其他工作）
+- torch 2.5.0下载已启动但未完成
+- 需要后续继续完成方案2或寻找替代方案
+
+### 当前工作总结（2025-11-18 05:06）
+
+#### 已完成的工作 ✅
+1. **节点特征工程**（100%）
+   - ✅ 集成sentence-transformers生成384维文本嵌入
+   - ✅ 实现32维正弦-余弦时间编码
+   - ✅ 生成data/graph_base.pt（policy节点416维，其他节点384维）
+
+2. **HGT模型框架**（90%）
+   - ✅ 实现完整HGT模型类（scripts/train_hgt.py，324行）
+   - ✅ 2层HGTConv + 残差连接 + Dropout 0.2
+   - ✅ 链路预测训练函数
+   - ✅ 完整训练流程（50 epochs）
+   - ✅ 符合CLAUDE.md所有规范
+
+3. **依赖问题诊断**（100%）
+   - ✅ 识别torch-scatter/torch-sparse为HGTConv运行依赖
+   - ✅ 分析4种解决方案并评估优先级
+   - ✅ 尝试方案1（升级setuptools）- 失败
+   - 🔄 启动方案2（降级torch到2.5.0）- 进行中
+
+#### 待完成的工作 ⏭️
+1. **依赖问题解决**（优先级最高）
+   - 方案2：完成torch 2.5.0下载并安装torch-scatter/torch-sparse预编译wheel
+   - 或方案3：使用Docker环境
+   - 验证标准：HGT训练脚本无错运行至少1个epoch
+
+2. **HGT训练验证**
+   - 运行scripts/train_hgt.py
+   - 验证链路预测功能
+   - 计算评测指标（AUC、AP）
+
+3. **统计特征集成**（需先爬取数据）
+   - 爬取NBS GDP/R&D数据
+   - 爬取CNIPA专利数据
+   - 集成到图节点特征
+
+#### 项目整体进度
+
+**语义抽取层**：100% ✅
+- BM25 + FAISS混合检索
+- 校准与不确定性量化（ECE 0.0353）
+- 检索评估指标完成
+
+**图学习层**：90% 🔄
+- 异质图构建完成
+- 节点特征工程完成（文本嵌入+时间编码）
+- HGT模型框架完成
+- **阻塞**：torch-scatter/torch-sparse依赖问题
+
+**因果推断层**：0% ⏭️
+
 ---
 
 *本日志遵循CLAUDE.md规范，记录所有关键决策和分析过程。*
