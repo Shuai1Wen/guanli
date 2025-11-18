@@ -111,6 +111,26 @@ class DIDRunner:
         except Exception as e:
             raise RuntimeError(f"执行prep_panel.py时出错: {e}")
 
+    def _print_r_installation_guide(self):
+        """打印R环境安装指南"""
+        print("\n" + "=" * 80)
+        print("R环境安装指南")
+        print("=" * 80)
+        print("\n【Ubuntu/Debian】")
+        print("  sudo apt-get update")
+        print("  sudo apt-get install -y r-base r-base-dev")
+        print("\n【macOS（使用Homebrew）】")
+        print("  brew install r")
+        print("\n【Windows】")
+        print("  从 https://cran.r-project.org/bin/windows/base/ 下载并安装")
+        print("\n【安装R包】")
+        print("  进入R环境后运行：")
+        print("  install.packages(c('did', 'fixest', 'didimputation'))")
+        print("\n【替代方案】")
+        print("  如果无法安装R环境，可以使用demo_did_workflow.py脚本")
+        print("  该脚本使用Python模拟DID估计（仅供演示）")
+        print("=" * 80)
+
     def check_r_environment(self) -> Dict[str, bool]:
         """检查R环境和所需包
 
@@ -141,12 +161,15 @@ class DIDRunner:
                 print(f"  {version_info}")
             else:
                 print("❌ R未正确安装")
+                self._print_r_installation_guide()
                 return checks
         except FileNotFoundError:
             print("❌ 找不到Rscript命令，请确保R已安装并在PATH中")
+            self._print_r_installation_guide()
             return checks
         except Exception as e:
             print(f"❌ 检查R安装时出错: {e}")
+            self._print_r_installation_guide()
             return checks
 
         # 检查必需的R包

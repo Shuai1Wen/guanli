@@ -276,15 +276,18 @@ class CalibrationMetrics:
         return result
 
 
-def demo_calibration():
-    """演示校准流程"""
-    print("PSC-Graph 校准与不确定性量化演示")
-    print("=" * 80)
+def generate_mock_data(n_samples: int = 1000, n_classes: int = 5, random_seed: int = 42):
+    """生成模拟校准数据
 
-    # 生成模拟数据
-    np.random.seed(42)
-    n_samples = 1000
-    n_classes = 5
+    Args:
+        n_samples: 样本数
+        n_classes: 类别数
+        random_seed: 随机种子
+
+    Returns:
+        (cal_logits, test_logits, cal_labels, test_labels, n_classes)
+    """
+    np.random.seed(random_seed)
 
     # 模拟未校准的logits（过度自信）
     logits = np.random.randn(n_samples, n_classes) * 2
@@ -300,7 +303,19 @@ def demo_calibration():
     print(f"  测试集: {len(test_labels)} 样本")
     print(f"  类别数: {n_classes}")
 
-    # 1. 计算未校准的ECE
+    return cal_logits, test_logits, cal_labels, test_labels, n_classes
+
+
+def evaluate_uncalibrated_model(test_logits: np.ndarray, test_labels: np.ndarray) -> float:
+    """评估未校准模型
+
+    Args:
+        test_logits: 测试集logits
+        test_labels: 测试集标签
+
+    Returns:
+        未校准的ECE值
+    """
     print("\n" + "=" * 80)
     print("【1】未校准模型评估")
     print("=" * 80)
@@ -311,7 +326,26 @@ def demo_calibration():
     )
     print(f"预期校准误差（ECE）: {ece_before:.4f}")
 
-    # 2. 温度缩放校准
+    return ece_before
+
+
+def perform_temperature_scaling(
+    cal_logits: np.ndarray,
+    cal_labels: np.ndarray,
+    test_logits: np.ndarray,
+    test_labels: np.ndarray
+) -> Tuple[TemperatureScaling, float]:
+    """执行温度缩放校准
+
+    Args:
+        cal_logits: 校准集logits
+        cal_labels: 校准集标签
+        test_logits: 测试集logits
+        test_labels: 测试集标签
+
+    Returns:
+        (温度缩放器, 校准后ECE)
+    """
     print("\n" + "=" * 80)
     print("【2】温度缩放校准")
     print("=" * 80)
@@ -325,7 +359,6 @@ def demo_calibration():
         cal_probs, test_labels
     )
     print(f"校准后ECE: {ece_after:.4f}")
-    print(f"ECE改善: {(ece_before - ece_after):.4f} ({(1 - ece_after/ece_before)*100:.1f}%)")
 
     # 检查是否满足要求
     if ece_after <= 0.05:
@@ -333,12 +366,35 @@ def demo_calibration():
     else:
         print(f"✗ 未满足要求（需要 ≤ 0.05）")
 
-    # 3. 共形预测
+    return ts, ece_after
+
+
+def perform_conformal_prediction(
+    ts: TemperatureScaling,
+    cal_logits: np.ndarray,
+    cal_labels: np.ndarray,
+    test_logits: np.ndarray,
+    test_labels: np.ndarray,
+    alpha: float = 0.1
+) -> ConformalPredictor:
+    """执行共形预测
+
+    Args:
+        ts: 温度缩放器
+        cal_logits: 校准集logits
+        cal_labels: 校准集标签
+        test_logits: 测试集logits
+        test_labels: 测试集标签
+        alpha: 显著性水平
+
+    Returns:
+        共形预测器
+    """
     print("\n" + "=" * 80)
-    print("【3】共形预测（α=0.1，目标覆盖率≥90%）")
+    print(f"【3】共形预测（α={alpha}，目标覆盖率≥{(1-alpha)*100:.0f}%）")
     print("=" * 80)
 
-    cp = ConformalPredictor(alpha=0.1)
+    cp = ConformalPredictor(alpha=alpha)
 
     # 使用校准集的校准后概率进行共形校准
     cal_probs_calibrated = ts.transform(cal_logits)
@@ -346,27 +402,38 @@ def demo_calibration():
     print(f"共形预测分位数: {cp.quantile:.4f}")
 
     # 测试集覆盖率
+    cal_probs = ts.transform(test_logits)
     coverage = cp.compute_coverage(cal_probs, test_labels)
     print(f"测试集覆盖率: {coverage:.4f} ({coverage*100:.1f}%)")
 
     # 检查是否满足要求
-    if coverage >= 0.90:
-        print(f"✓ 满足CLAUDE.md要求（覆盖率 ≥ 90%）")
+    if coverage >= 1 - alpha:
+        print(f"✓ 满足CLAUDE.md要求（覆盖率 ≥ {(1-alpha)*100:.0f}%）")
     else:
-        print(f"✗ 未满足要求（需要 ≥ 90%）")
+        print(f"✗ 未满足要求（需要 ≥ {(1-alpha)*100:.0f}%）")
 
     # 预测集大小统计
     pred_sets = cp.predict_set(cal_probs)
     avg_set_size = np.mean([len(s) for s in pred_sets])
     print(f"平均预测集大小: {avg_set_size:.2f} 个类别")
 
-    # 4. 可靠性图
+    return cp
+
+
+def print_reliability_diagram(cal_probs: np.ndarray, test_labels: np.ndarray, n_bins: int = 10):
+    """打印可靠性图统计
+
+    Args:
+        cal_probs: 校准后概率
+        test_labels: 测试集标签
+        n_bins: 分箱数量
+    """
     print("\n" + "=" * 80)
     print("【4】可靠性图统计")
     print("=" * 80)
 
     reliability = CalibrationMetrics.plot_reliability_diagram(
-        cal_probs, test_labels, n_bins=10
+        cal_probs, test_labels, n_bins=n_bins
     )
 
     print(f"分箱数: {reliability['n_bins']}")
@@ -383,6 +450,33 @@ def demo_calibration():
             f"{stat['count']:<10} "
             f"{stat['gap']:<10.4f}"
         )
+
+
+def demo_calibration():
+    """演示校准流程"""
+    print("PSC-Graph 校准与不确定性量化演示")
+    print("=" * 80)
+
+    # 生成模拟数据
+    cal_logits, test_logits, cal_labels, test_labels, n_classes = generate_mock_data(
+        n_samples=1000, n_classes=5, random_seed=42
+    )
+
+    # 1. 评估未校准模型
+    ece_before = evaluate_uncalibrated_model(test_logits, test_labels)
+
+    # 2. 温度缩放校准
+    ts, ece_after = perform_temperature_scaling(cal_logits, cal_labels, test_logits, test_labels)
+
+    # 打印改善情况
+    print(f"ECE改善: {(ece_before - ece_after):.4f} ({(1 - ece_after/ece_before)*100:.1f}%)")
+
+    # 3. 共形预测
+    cp = perform_conformal_prediction(ts, cal_logits, cal_labels, test_logits, test_labels, alpha=0.1)
+
+    # 4. 可靠性图
+    cal_probs = ts.transform(test_logits)
+    print_reliability_diagram(cal_probs, test_labels, n_bins=10)
 
     print("\n" + "=" * 80)
     print("演示完成")
