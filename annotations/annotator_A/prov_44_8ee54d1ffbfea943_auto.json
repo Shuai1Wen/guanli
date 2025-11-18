@@ -1,0 +1,61 @@
+{
+  "doc_id": "prov_44_8ee54d1ffbfea943",
+  "source_title": "上级政府部门",
+  "source_url": "http://gdstc.gd.gov.cn/zwgk_n/zcfg/szcfg/content/post_4442779.html",
+  "annotations": [
+    {
+      "goal": "推动产业科技互促双强的实施意见",
+      "instrument": [
+        "platform"
+      ],
+      "target_actor": "相关单位",
+      "strength": 1,
+      "evidence_spans": [
+        {
+          "start": 84,
+          "end": 124,
+          "from_doc": "policy",
+          "text": "广东省人民政府办公厅关于加快构建现代化中试平台体系推动产业科技互促双强的实施意见"
+        }
+      ],
+      "confidence": 0.75
+    },
+    {
+      "goal": "推动产业科技互促双强",
+      "instrument": [
+        "platform"
+      ],
+      "target_actor": "相关单位",
+      "strength": 1,
+      "evidence_spans": [
+        {
+          "start": 270,
+          "end": 361,
+          "from_doc": "policy",
+          "text": "为加快构建具有全球影响力的现代化中试平台体系，强化产业中试能力支撑，推动产业科技互促双强，加快发展新质生产力，推动我省经济高质量发展，经省人民政府同意，结合我省实际提出以下实施意见。"
+        }
+      ],
+      "confidence": 0.75
+    },
+    {
+      "goal": "提升一批”的思路",
+      "instrument": [
+        "platform"
+      ],
+      "target_actor": "相关单位",
+      "strength": 1,
+      "evidence_spans": [
+        {
+          "start": 369,
+          "end": 519,
+          "from_doc": "policy",
+          "text": "以习近平新时代中国特色社会主义思想为指导，全面贯彻党的二十大精神，深入贯彻落实习近平总书记视察广东重要讲话、重要指示精神，完整、准确、全面贯彻新发展理念，坚持市场导向，围绕我省重点发展产业领域的中试服务需求，聚焦有前景、有优势、有潜力、有特色的细分领域，谋划布局全省多层次、体系化中试服务体系。坚持创..."
+        }
+      ],
+      "confidence": 0.75
+    }
+  ],
+  "annotator": "annotator_A",
+  "annotated_at": "2025-11-17T10:40:17.242730Z",
+  "notes": "LLM辅助生成的示例标注（自动化脚本），需人工复核"
+}

@@ -1,0 +1,18 @@
+# PSC-Graph 数据爬取站点种子配置（测试版）
+# 仅爬取2页进行功能验证
+
+# ==================== 中央政策（测试：仅2页） ====================
+central:
+  - name: gov_policy_department
+    list_url: "https://www.gov.cn/zhengce/zhengceku/bmwj/home_{page}.htm"
+    detail_link_selector: "a"
+    start_page: 1
+    max_pages: 2               # 测试：仅2页
+    category: "部门文件"
+
+  - name: gov_policy_interpretation
+    list_url: "https://www.gov.cn/zhengce/jiedu/home_{page}.htm"
+    detail_link_selector: "a"
+    start_page: 1
+    max_pages: 2               # 测试：仅2页
+    category: "政策解读"

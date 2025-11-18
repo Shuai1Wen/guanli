@@ -1,0 +1,225 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://psc-graph.org/schemas/policy_annotation.json",
+  "title": "PSC-Graph政策标注Schema",
+  "description": "政策语义五元组标注规范（JSON Schema Draft 2020-12）",
+  "type": "object",
+  "required": ["doc_id", "annotations", "annotator", "annotated_at"],
+  "properties": {
+    "doc_id": {
+      "type": "string",
+      "description": "关联的原始政策文档ID（对应corpus中的doc_id）",
+      "pattern": "^(gov_central|prov_[0-9]{2})_[a-f0-9]{16}$"
+    },
+    "source_title": {
+      "type": "string",
+      "description": "原文档标题（便于人工查阅）"
+    },
+    "source_url": {
+      "type": "string",
+      "format": "uri",
+      "description": "原文档URL"
+    },
+    "annotations": {
+      "type": "array",
+      "description": "政策五元组标注列表",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/PolicyTuple"
+      }
+    },
+    "annotator": {
+      "type": "string",
+      "description": "标注人员ID（annotator_A, annotator_B, adjudicator）",
+      "enum": ["annotator_A", "annotator_B", "adjudicator"]
+    },
+    "annotated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "标注时间（ISO8601格式）"
+    },
+    "notes": {
+      "type": "string",
+      "description": "标注备注"
+    }
+  },
+  "$defs": {
+    "PolicyTuple": {
+      "type": "object",
+      "required": ["goal", "instrument", "target_actor", "strength", "evidence_spans", "confidence"],
+      "properties": {
+        "goal": {
+          "type": "string",
+          "description": "政策目标/任务（字符串）",
+          "minLength": 5,
+          "maxLength": 500
+        },
+        "instrument": {
+          "type": "array",
+          "description": "政策工具/手段（枚举多选）",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "enum": [
+              "funding",
+              "tax",
+              "land",
+              "talent",
+              "standard",
+              "platform",
+              "ip",
+              "finance",
+              "procurement",
+              "pilot",
+              "data_compute",
+              "other"
+            ]
+          },
+          "uniqueItems": true
+        },
+        "target_actor": {
+          "type": "string",
+          "description": "政策对象/主体（企业、高校、科研院所等）",
+          "minLength": 2,
+          "maxLength": 200
+        },
+        "strength": {
+          "type": "integer",
+          "description": "政策强度/约束性（0=背景, 1=倡议性, 2=一般性, 3=强约束）",
+          "minimum": 0,
+          "maximum": 3
+        },
+        "evidence_spans": {
+          "type": "array",
+          "description": "证据段落（必须可追溯到原文）",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/EvidenceSpan"
+          }
+        },
+        "confidence": {
+          "type": "number",
+          "description": "标注置信度（0.0-1.0）",
+          "minimum": 0.0,
+          "maximum": 1.0
+        },
+        "region": {
+          "$ref": "#/$defs/Region",
+          "description": "地域/覆盖范围（可选）"
+        },
+        "timeframe": {
+          "$ref": "#/$defs/Timeframe",
+          "description": "时间/时点（可选）"
+        },
+        "support": {
+          "type": "array",
+          "description": "配套措施（可选）",
+          "items": {
+            "$ref": "#/$defs/SupportMeasure"
+          }
+        }
+      }
+    },
+    "EvidenceSpan": {
+      "type": "object",
+      "required": ["start", "end", "from_doc"],
+      "properties": {
+        "start": {
+          "type": "integer",
+          "description": "证据起始偏移（字符位置）",
+          "minimum": 0
+        },
+        "end": {
+          "type": "integer",
+          "description": "证据结束偏移（字符位置）",
+          "minimum": 0
+        },
+        "from_doc": {
+          "type": "string",
+          "description": "证据来源（policy=政策原文, interpretation=政策解读）",
+          "enum": ["policy", "interpretation"]
+        },
+        "text": {
+          "type": "string",
+          "description": "证据文本（便于人工查阅）",
+          "minLength": 1
+        }
+      }
+    },
+    "Region": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "地区名称（如：北京市、广东省深圳市）"
+        },
+        "admin_code": {
+          "type": "string",
+          "description": "行政区划码（省级2位/市级4位/区级6位）",
+          "pattern": "^[0-9]{2,6}$"
+        },
+        "uncertain": {
+          "type": "boolean",
+          "description": "地域范围是否模糊",
+          "default": false
+        }
+      }
+    },
+    "Timeframe": {
+      "type": "object",
+      "properties": {
+        "effective_date": {
+          "type": "string",
+          "format": "date",
+          "description": "生效日期（ISO8601: YYYY-MM-DD）"
+        },
+        "expiry_date": {
+          "type": "string",
+          "format": "date",
+          "description": "失效日期"
+        },
+        "revision_of": {
+          "type": "string",
+          "description": "修订自哪个文件的doc_id"
+        },
+        "revision_date": {
+          "type": "string",
+          "format": "date",
+          "description": "修订日期"
+        }
+      }
+    },
+    "SupportMeasure": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "配套措施类型",
+          "enum": [
+            "funding",
+            "tax",
+            "quota",
+            "land",
+            "energy_quota",
+            "emission_quota",
+            "fast_track",
+            "other"
+          ]
+        },
+        "value": {
+          "type": "number",
+          "description": "数值（如金额、额度等，可为null）"
+        },
+        "unit": {
+          "type": "string",
+          "description": "单位（如：万元、平方米等，可为null）"
+        },
+        "note": {
+          "type": "string",
+          "description": "备注"
+        }
+      }
+    }
+  }
+}
