@@ -213,33 +213,38 @@ def train_link_prediction(
     return loss.item()
 
 
-def main():
-    """主函数：演示HGT训练流程"""
-    print("PSC-Graph HGT模型训练")
-    print("=" * 80)
+def initialize_model_and_data(
+    data: HeteroData,
+    device: torch.device,
+    hidden_channels: int = 128,
+    num_heads: int = 4,
+    num_layers: int = 2,
+    dropout: float = 0.2
+) -> Tuple[HGT, torch.optim.Optimizer, Dict, Dict]:
+    """初始化模型、优化器和数据字典
 
-    # 设置设备
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(f"\n使用设备: {device}")
+    Args:
+        data: 图数据
+        device: 计算设备
+        hidden_channels: 隐藏层维度
+        num_heads: 注意力头数
+        num_layers: HGT层数
+        dropout: Dropout比例
 
-    # 加载图数据
-    print("\n【步骤1】加载图数据")
-    print("-" * 80)
-    data = load_graph("data/graph_base.pt")
-
-    # 移动数据到设备
-    data = data.to(device)
-
-    # 初始化模型
+    Returns:
+        (model, optimizer, x_dict, edge_index_dict)
+    """
     print("\n【步骤2】初始化HGT模型")
     print("-" * 80)
+
+    # 初始化模型
     model = HGT(
         node_types=list(data.node_types),
         edge_types=list(data.edge_types),
-        hidden_channels=128,
-        num_heads=4,
-        num_layers=2,
-        dropout=0.2
+        hidden_channels=hidden_channels,
+        num_heads=num_heads,
+        num_layers=num_layers,
+        dropout=dropout
     )
     model = model.to(device)
 
@@ -277,14 +282,34 @@ def main():
     # 初始化优化器
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=5e-4)
 
-    # 选择目标边类型（链路预测任务）
-    target_edge_type = ('policy', 'apply_to', 'actor')
+    return model, optimizer, x_dict, edge_index_dict
+
+
+def run_training_loop(
+    model: HGT,
+    data: HeteroData,
+    x_dict: Dict,
+    edge_index_dict: Dict,
+    optimizer: torch.optim.Optimizer,
+    target_edge_type: Tuple[str, str, str],
+    num_epochs: int = 50
+):
+    """运行训练循环
+
+    Args:
+        model: HGT模型
+        data: 图数据
+        x_dict: 节点特征字典
+        edge_index_dict: 边索引字典
+        optimizer: 优化器
+        target_edge_type: 目标边类型
+        num_epochs: 训练轮数
+    """
     print(f"\n【步骤3】训练链路预测任务")
     print(f"  目标边类型: {target_edge_type}")
     print("-" * 80)
 
     # 训练循环
-    num_epochs = 50
     for epoch in range(1, num_epochs + 1):
         loss = train_link_prediction(
             model, data, x_dict, edge_index_dict, optimizer, target_edge_type
@@ -295,10 +320,21 @@ def main():
 
     print(f"\n✓ 训练完成")
 
-    # 保存模型
+
+def save_trained_model(model: HGT, optimizer: torch.optim.Optimizer, output_dir: Path = None):
+    """保存训练好的模型
+
+    Args:
+        model: HGT模型
+        optimizer: 优化器
+        output_dir: 输出目录（默认为results/）
+    """
     print("\n【步骤4】保存模型")
     print("-" * 80)
-    output_dir = Path("results")
+
+    if output_dir is None:
+        output_dir = Path("results")
+
     output_dir.mkdir(parents=True, exist_ok=True)
 
     model_path = output_dir / "hgt_model.pt"
@@ -314,6 +350,34 @@ def main():
     }, model_path)
 
     print(f"✓ 模型已保存到: {model_path}")
+
+
+def main():
+    """主函数：演示HGT训练流程"""
+    print("PSC-Graph HGT模型训练")
+    print("=" * 80)
+
+    # 设置设备
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print(f"\n使用设备: {device}")
+
+    # 加载图数据
+    print("\n【步骤1】加载图数据")
+    print("-" * 80)
+    data = load_graph("data/graph_base.pt")
+    data = data.to(device)
+
+    # 初始化模型和数据
+    model, optimizer, x_dict, edge_index_dict = initialize_model_and_data(
+        data, device, hidden_channels=128, num_heads=4, num_layers=2, dropout=0.2
+    )
+
+    # 训练模型
+    target_edge_type = ('policy', 'apply_to', 'actor')
+    run_training_loop(model, data, x_dict, edge_index_dict, optimizer, target_edge_type, num_epochs=50)
+
+    # 保存模型
+    save_trained_model(model, optimizer)
 
     print("\n" + "=" * 80)
     print("训练完成")
