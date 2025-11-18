@@ -389,9 +389,16 @@ class GraphBuilder:
                     time_encodings = self._generate_time_encoding(timestamps, encoding_dim=32)
 
                     # 拼接文本嵌入和时间编码
+                    # 维度说明：
+                    # - text_embeddings: [num_nodes, 384] (sentence-transformers MiniLM-L12-v2输出)
+                    # - time_encodings: [num_nodes, 32] (正弦-余弦时间编码)
+                    # - 拼接后: [num_nodes, 416] (policy节点特有，包含时间信息)
+                    # 这与HGT模型中的Linear(-1, hidden_channels)兼容，会自动推断416维输入
                     data[node_type].x = torch.cat([text_embeddings, time_encodings], dim=1)
                     print(f"  ✓ policy节点特征: 384维文本嵌入 + 32维时间编码 = {data[node_type].x.shape[1]}维")
                 else:
+                    # 其他节点类型仅使用文本嵌入
+                    # 维度说明：[num_nodes, 384] (与policy不同，无时间编码)
                     data[node_type].x = text_embeddings
 
                 data[node_type].node_id = node_ids  # 保存原始ID

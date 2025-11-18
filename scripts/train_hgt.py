@@ -68,7 +68,11 @@ class HGT(nn.Module):
         self.dropout = dropout
 
         # 输入投影层：每种节点类型独立的投影
-        # 使用-1自动推断输入维度
+        # 维度说明：使用Linear(-1, hidden_channels)自动推断输入维度
+        # - policy节点: 自动推断为416维（384文本+32时间）→ hidden_channels
+        # - 其他节点: 自动推断为384维（仅文本） → hidden_channels
+        # 这种设计允许异质图中不同节点类型有不同的输入维度
+        # PyTorch会在第一次前向传播时自动初始化Linear的权重矩阵
         self.lin_dict = nn.ModuleDict()
         for node_type in node_types:
             self.lin_dict[node_type] = Linear(-1, hidden_channels)
