@@ -993,6 +993,33 @@ results/logs/, results/checkpoints/
 - 成功标志：HGT训练脚本无错误运行至少1个epoch
 - 失败标志：编译仍然报错或运行时新错误
 
+**执行结果**: ❌ 失败
+- setuptools成功升级到80.9.0
+- 编译过程未报install_layout错误（升级有效）
+- 但编译进程运行约6分钟后异常终止
+- torch-scatter和torch-sparse均未成功安装
+- 可能原因：编译超时或资源不足
+
+### 决策14: 切换到方案2（降级torch到有预编译wheel的版本）
+**时间**: 2025-11-18 03:37
+**背景**: 方案1失败后的备选方案
+**决策**: 降级torch到2.4.0或2.5.0（有PyG官方预编译wheel）
+**理由**:
+- PyG为torch 2.4/2.5提供预编译的torch-scatter/torch-sparse wheel
+- 避免从源码编译的复杂性和不确定性
+- 虽然需要重新安装torch生态，但更可靠
+**风险评估**:
+- 需要卸载并重装torch（约3GB下载）
+- sentence-transformers可能需要验证兼容性
+- 但sentence-transformers支持torch>=2.0，风险可控
+**执行计划**:
+1. 检查torch 2.4.0和2.5.0的torch-scatter/torch-sparse wheel可用性
+2. 选择合适版本（优先2.5.0，次选2.4.0）
+3. 卸载torch 2.9.1
+4. 安装torch 2.5.0 + torch-scatter + torch-sparse（预编译wheel）
+5. 验证sentence-transformers仍可用
+6. 测试HGT训练脚本
+
 ---
 
 *本日志遵循CLAUDE.md规范，记录所有关键决策和分析过程。*
