@@ -1074,7 +1074,166 @@ results/logs/, results/checkpoints/
 - HGT模型框架完成
 - **阻塞**：torch-scatter/torch-sparse依赖问题
 
-**因果推断层**：0% ⏭️
+**因果推断层**：90% 🔄
+- DID面板数据准备完成（scripts/prep_panel.py）
+- R DID估计脚本完成（scripts/did_run.R）
+- Python-R桥接完成（scripts/run_did_from_python.py）
+- 示例数据生成完成（403行 × 9列）
+- **待测试**：需要R环境运行完整流程
+- **待完成**：代码规范核对检查
+
+---
+
+### 决策15: DID因果推断层代码实现完成
+**时间**: 2025-11-18 14:30
+**背景**: 用户要求"那么我们接下来进行后面的因果推断层吧，请你首先先实现完整的代码内容，然后再进行仔细的核对检查"
+**决策**: 完成DID因果推断层的完整代码实现，采用三脚本分离设计
+
+#### 实施内容
+
+**1. scripts/prep_panel.py (377行)** ✅
+- 功能：DID面板数据准备
+- 核心类：`PanelDataPreparer`
+- 主要方法：
+  - `extract_policy_landing()`: 从标注数据提取政策落地时点
+  - `generate_simulated_panel()`: 生成模拟面板数据（用于测试）
+  - `validate_panel()`: 验证面板数据质量
+  - `save_panel_data()`: 保存面板数据和政策时点表
+- 输出：
+  - `data/panel_for_did.csv`: 标准DID面板（403行 × 9列）
+  - `data/policy_landing.csv`: 政策落地时点表（5个试点地区）
+- 验证结果：
+  - ✓ 平衡面板：31个地区 × 13年（2010-2022）
+  - ✓ 处理组5个，对照组26个
+  - ✓ treat变量与g和time一致
+  - ✓ 无缺失值
+
+**2. scripts/did_run.R (497行)** ✅
+- 功能：R语言DID估计（三估计器并行验证）
+- 核心函数：
+  - `estimate_csatt()`: Callaway & Sant'Anna ATT估计
+    - 使用`did::att_gt()`进行组-时点ATT估计
+    - 使用`did::aggte()`汇总事件研究和总体ATT
+    - 双重稳健估计（est_method="dr"）
+  - `estimate_sunab()`: Sun & Abraham估计
+    - 使用`fixest::feols()`和`sunab()`
+    - 支持多个固定效应
+  - `estimate_bjs()`: Borusyak-Jaravel-Spiess估计
+    - 使用`didimputation::did_imputation()`
+    - 反事实填补法
+  - `pretrend_test()`: 预趋势检验
+  - `plot_event_study()`: 事件研究可视化
+  - `save_results()`: 保存所有估计结果为CSV
+- 命令行参数支持：
+  - panel_path: 面板数据路径
+  - output_dir: 输出目录
+  - estimators: 估计器列表（逗号分隔）
+- 输出：
+  - `results/did_csatt_event.csv`: CS-ATT事件研究
+  - `results/did_csatt_overall.csv`: CS-ATT总体ATT
+  - `results/did_sunab_coefs.csv`: Sun-Abraham系数
+  - `results/did_bjs_overall.csv`: BJS总体ATT
+  - `results/did_pretrend_test.csv`: 预趋势检验
+  - `results/did_event_study.pdf`: 事件研究图
+
+**3. scripts/run_did_from_python.py (563行)** ✅
+- 功能：Python-R桥接，提供统一的DID流程接口
+- 核心类：`DIDRunner`
+- 主要方法：
+  - `prepare_panel_data()`: 调用prep_panel.py准备数据
+  - `check_r_environment()`: 检查R环境和所需包
+  - `install_r_packages()`: 自动安装缺失的R包
+  - `run_r_did()`: 通过subprocess调用R脚本
+  - `load_did_results()`: 加载R输出的CSV结果
+  - `summarize_results()`: 汇总三估计器结果
+  - `validate_consistency()`: 验证估计器一致性（方向、显著性）
+  - `run()`: 完整DID流程编排
+- 一致性验证：
+  - 方向一致性：检查三估计器符号是否一致
+  - 显著性一致性：检查p值是否一致
+  - 输出警告列表
+- 输出：
+  - `results/did_summary.json`: 汇总结果（包含验证信息）
+
+**4. 测试数据生成** ✅
+已成功生成示例面板数据：
+- 31个省份（来自data/province_codes.csv）
+- 5个处理组：北京(2015)、广东(2016)、上海(2016)、浙江(2017)、江苏(2017)
+- 26个对照组：其他省份（g=0, never treated）
+- 时间跨度：2010-2022（13年）
+- 总观测：403行
+- 结果变量：y（GDP增长率，模拟真实政策效应为3个百分点）
+- 控制变量：industry_share, pop_log, rd_intensity
+
+#### 代码质量验证
+
+**编码规范遵循**：
+- ✓ 所有注释使用简体中文
+- ✓ UTF-8编码
+- ✓ 文档字符串完整（功能、参数、返回值）
+- ✓ 类型提示（Python）
+- ✓ 错误处理（try-except, tryCatch）
+- ✓ 日志输出（进度、结果、警告）
+
+**CLAUDE.md强制规范遵循**：
+- ✓ 三估计器并行验证（CS-ATT + Sun-Abraham + BJS）
+- ✓ 预趋势检验强制执行
+- ✓ 事件研究可视化
+- ✓ 面板数据质量验证（平衡性、一致性）
+- ✓ 结果一致性检查
+- ✓ 面板数据必须字段：id, time, y, g, treat
+- ✓ 控制变量建议字段：industry_share, pop_log, rd_intensity
+
+**架构设计**：
+- ✓ 关注点分离：数据准备、估计、桥接分离
+- ✓ 单一职责：每个函数职责明确
+- ✓ 接口清晰：输入输出类型明确
+- ✓ 错误恢复：单个估计器失败不影响其他
+- ✓ 可测试性：每个组件可独立运行
+
+#### 依赖要求
+
+**Python依赖**（已满足）：
+- pandas
+- numpy
+- subprocess（标准库）
+- json（标准库）
+
+**R环境依赖**（需要安装）：
+- R ≥ 4.0.0
+- R包：
+  - `did`（Callaway & Sant'Anna）
+  - `fixest`（Sun & Abraham）
+  - `didimputation`（BJS）
+  - `ggplot2`（可视化）
+
+**当前状态**：
+- ❌ R未安装在当前环境
+- 脚本已实现自动安装R包功能
+- 需要用户手动安装R环境
+
+#### 决策理由
+1. **三脚本分离设计**：便于单独测试和维护
+2. **模拟数据生成**：便于无需真实数据即可测试流程
+3. **subprocess方式调用R**：比rpy2更稳健，无版本依赖问题
+4. **自动R包安装**：降低用户配置负担
+5. **一致性验证**：符合CLAUDE.md强制要求
+
+#### 待测试项
+由于R环境缺失，以下测试需要在安装R后执行：
+1. 端到端测试：运行`python3 scripts/run_did_from_python.py`
+2. R脚本直接测试：`Rscript scripts/did_run.R`
+3. 估计结果验证：
+   - 检查ATT估计值是否接近真实效应（0.03）
+   - 检查预趋势检验是否通过
+   - 检查三估计器方向一致性
+   - 检查事件研究图是否正确生成
+
+#### 下一步
+- ✓ 代码实现完成（3个脚本）
+- ✓ 示例数据准备完成
+- ⏭️ 需要R环境进行完整测试
+- ⏭️ 进行代码核对检查（对照CLAUDE.md规范）
 
 ---
 
