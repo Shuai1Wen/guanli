@@ -647,6 +647,148 @@ library(ggplot2)
 
 ---
 
+### 问题7：HGT训练中出现NaN损失或梯度爆炸
+
+**症状**：
+```
+RuntimeError: 检测到NaN损失！
+或
+RuntimeError: 检测到NaN梯度！参数: convs.0.weight
+或
+Loss值突然从0.5跳到inf
+```
+
+**原因**：
+- **NaN问题**：
+  - 数值溢出：logits值过大（>100）导致BCE损失计算出现NaN
+  - 梯度消失：学习率过大导致参数更新后出现NaN
+  - 输入异常：节点特征包含NaN或Inf值
+- **梯度爆炸问题**：
+  - 学习率过大
+  - 残差连接累积导致梯度指数增长
+  - 负采样策略不当
+
+**解决方案**：
+
+**步骤1：检查输入数据**
+```python
+# 在train_hgt.py的main函数开头添加检查
+import torch
+import numpy as np
+
+# 检查图数据是否包含NaN
+for node_type in data.node_types:
+    if hasattr(data[node_type], 'x'):
+        x = data[node_type].x
+        if torch.isnan(x).any() or torch.isinf(x).any():
+            print(f"警告: {node_type}节点特征包含NaN或Inf!")
+            print(f"  NaN数量: {torch.isnan(x).sum().item()}")
+            print(f"  Inf数量: {torch.isinf(x).sum().item()}")
+```
+
+**步骤2：调整训练参数**
+
+修改`scripts/train_hgt.py`中的TrainingConfig:
+
+```python
+# 降低学习率（从0.001降到0.0001）
+learning_rate: float = 0.0001
+
+# 增加权重衰减（正则化）
+weight_decay: float = 1e-3
+
+# 增加Dropout（从0.2增加到0.3）
+dropout: float = 0.3
+```
+
+**步骤3：启用内置保护机制**
+
+当前实现已包含以下保护机制（v1.1.0+）：
+
+✅ **Logits裁剪**：自动将得分裁剪到[-10, 10]范围，防止BCE产生NaN
+- 位置：train_hgt.py:258-259
+
+✅ **梯度裁剪**：自动裁剪梯度范数到1.0，防止梯度爆炸
+- 位置：train_hgt.py:287
+- 可通过`max_grad_norm`参数调整（默认1.0，建议0.5-2.0）
+
+✅ **NaN检测**：训练中自动检测并报告NaN位置
+- 位置：train_hgt.py:274-281（损失NaN检测）
+- 位置：train_hgt.py:290-295（梯度NaN检测）
+
+✅ **In-place操作修复**：已将`relu_()`改为`relu()`
+- 位置：train_hgt.py:146
+
+**步骤4：如果问题仍然存在**
+
+```python
+# 进一步降低学习率
+learning_rate: float = 0.00001
+
+# 增强梯度裁剪
+max_grad_norm: float = 0.5  # 在run_training_loop中设置
+
+# 减少模型复杂度
+num_layers: int = 2  # 减少层数
+hidden_channels: int = 64  # 减小隐藏层维度
+```
+
+**步骤5：诊断工具**
+
+训练失败时查看详细错误信息：
+```
+❌ 训练失败于Epoch 15: 检测到NaN损失！
+  pos_loss: 0.6932
+  neg_loss: nan
+  pos_scores范围: [-2.3451, 3.1234]
+  neg_scores范围: [-98.4567, 45.6789]  ← 发现问题：neg_scores过大
+```
+
+根据诊断结果：
+- 如果`pos_scores`或`neg_scores`范围异常 → 检查输入数据质量
+- 如果某个参数梯度NaN → 检查该层的输入是否正常
+- 如果loss从某个epoch开始突然变NaN → 降低学习率
+
+**预防措施**：
+
+1. **数据质量检查**（在build_graph_pyg.py中已实现）：
+   - 时间戳异常率<10%（超过则报错）
+   - 文本嵌入归一化检查
+
+2. **训练监控**（建议添加）：
+   ```python
+   # 在训练循环中添加
+   if epoch % 5 == 0:
+       print(f"  参数范数: {sum(p.norm().item() for p in model.parameters()):.2f}")
+       print(f"  梯度范数: {sum(p.grad.norm().item() for p in model.parameters() if p.grad is not None):.2f}")
+   ```
+
+3. **渐进式调试**：
+   - 先用num_epochs=10训练，确保无NaN
+   - 再增加到50轮
+   - 最后调优超参数
+
+**技术背景**：
+
+NaN和梯度爆炸是深度学习训练中的常见问题，主要原因是数值计算的不稳定性。本项目通过以下方式系统性解决：
+
+1. **数值稳定性**：
+   - BCE损失使用`with_logits`版本（内部log-sum-exp技巧）
+   - Logits裁剪到安全范围[-10, 10]
+   - Softmax计算时减去最大值（防止溢出）
+
+2. **梯度控制**：
+   - 全局梯度裁剪（clip_grad_norm_）
+   - Dropout正则化（防止过拟合）
+   - 权重衰减（L2正则化）
+
+3. **早期检测**：
+   - 每个epoch检测loss NaN
+   - 反向传播后检测梯度NaN
+   - 提供详细诊断信息
+
+---
+
 ## 🚀 数据规模扩展指南
 
 ### 当前规模（已验证 ✅）

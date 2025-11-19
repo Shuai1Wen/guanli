@@ -140,9 +140,10 @@ class HGT(nn.Module):
             节点嵌入字典 {node_type: Tensor}
         """
         # 输入投影
+        # 注意：使用非in-place的relu()而非relu_()，避免梯度计算问题
         h_dict = {}
         for node_type, x in x_dict.items():
-            h_dict[node_type] = self.lin_dict[node_type](x).relu_()
+            h_dict[node_type] = self.lin_dict[node_type](x).relu()
 
         # HGT层（带残差连接）
         for i, conv in enumerate(self.convs):
@@ -209,7 +210,8 @@ def train_link_prediction(
     x_dict: Dict[str, torch.Tensor],
     edge_index_dict: Dict[Tuple[str, str, str], torch.Tensor],
     optimizer: torch.optim.Optimizer,
-    target_edge_type: Tuple[str, str, str]
+    target_edge_type: Tuple[str, str, str],
+    max_grad_norm: float = 1.0
 ) -> float:
     """训练一个epoch（链路预测任务）
 
@@ -220,6 +222,7 @@ def train_link_prediction(
         edge_index_dict: 边索引字典
         optimizer: 优化器
         target_edge_type: 目标边类型
+        max_grad_norm: 最大梯度范数（用于梯度裁剪，防止梯度爆炸）
 
     Returns:
         训练损失
@@ -240,14 +243,20 @@ def train_link_prediction(
     # 计算链路预测得分（点积）
     pos_scores = (src_embeddings * dst_embeddings).sum(dim=-1)
 
-    # 负采样（简单策略：随机采样）
+    # 负采样（改进版：在目标设备上生成，避免CPU-GPU传输）
     num_neg = edge_index.shape[1]
-    neg_src = torch.randint(0, data[src_type].x.shape[0], (num_neg,))
-    neg_dst = torch.randint(0, data[dst_type].x.shape[0], (num_neg,))
+    device = edge_index.device
+    neg_src = torch.randint(0, data[src_type].x.shape[0], (num_neg,), device=device)
+    neg_dst = torch.randint(0, data[dst_type].x.shape[0], (num_neg,), device=device)
 
     neg_src_embeddings = h_dict[src_type][neg_src]
     neg_dst_embeddings = h_dict[dst_type][neg_dst]
     neg_scores = (neg_src_embeddings * neg_dst_embeddings).sum(dim=-1)
+
+    # 裁剪logits到合理范围，防止binary_cross_entropy_with_logits产生NaN
+    # 范围[-10, 10]足够表达[4.5e-5, 0.99995]的概率范围
+    pos_scores = torch.clamp(pos_scores, min=-10.0, max=10.0)
+    neg_scores = torch.clamp(neg_scores, min=-10.0, max=10.0)
 
     # 二元交叉熵损失
     pos_loss = F.binary_cross_entropy_with_logits(
@@ -261,8 +270,30 @@ def train_link_prediction(
 
     loss = pos_loss + neg_loss
 
+    # NaN检测：如果loss为NaN，立即报错
+    if torch.isnan(loss):
+        raise RuntimeError(
+            f"检测到NaN损失！\n"
+            f"  pos_loss: {pos_loss.item()}\n"
+            f"  neg_loss: {neg_loss.item()}\n"
+            f"  pos_scores范围: [{pos_scores.min().item():.4f}, {pos_scores.max().item():.4f}]\n"
+            f"  neg_scores范围: [{neg_scores.min().item():.4f}, {neg_scores.max().item():.4f}]"
+        )
+
     # 反向传播
     loss.backward()
+
+    # 梯度裁剪：防止梯度爆炸
+    torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
+
+    # 梯度NaN检测：检查是否有参数的梯度为NaN
+    for name, param in model.named_parameters():
+        if param.grad is not None and torch.isnan(param.grad).any():
+            raise RuntimeError(
+                f"检测到NaN梯度！参数: {name}\n"
+                f"  梯度范数: {param.grad.norm().item()}"
+            )
+
     optimizer.step()
 
     return loss.item()
@@ -345,7 +376,8 @@ def run_training_loop(
     edge_index_dict: Dict,
     optimizer: torch.optim.Optimizer,
     target_edge_type: Tuple[str, str, str],
-    num_epochs: int = 50
+    num_epochs: int = 50,
+    max_grad_norm: float = 1.0
 ):
     """运行训练循环
 
@@ -357,19 +389,34 @@ def run_training_loop(
         optimizer: 优化器
         target_edge_type: 目标边类型
         num_epochs: 训练轮数
+        max_grad_norm: 最大梯度范数（用于梯度裁剪）
     """
     print(f"\n【步骤3】训练链路预测任务")
     print(f"  目标边类型: {target_edge_type}")
+    print(f"  梯度裁剪阈值: {max_grad_norm}")
     print("-" * 80)
 
-    # 训练循环
+    # 训练循环（带NaN检测和早停）
     for epoch in range(1, num_epochs + 1):
-        loss = train_link_prediction(
-            model, data, x_dict, edge_index_dict, optimizer, target_edge_type
-        )
+        try:
+            loss = train_link_prediction(
+                model, data, x_dict, edge_index_dict, optimizer, target_edge_type,
+                max_grad_norm=max_grad_norm
+            )
 
-        if epoch % 10 == 0:
-            print(f"Epoch {epoch:03d} | Loss: {loss:.4f}")
+            if epoch % 10 == 0:
+                print(f"Epoch {epoch:03d} | Loss: {loss:.4f}")
+
+        except RuntimeError as e:
+            if "NaN" in str(e):
+                print(f"\n❌ 训练失败于Epoch {epoch}: {e}")
+                print("建议：")
+                print("  1. 降低学习率")
+                print("  2. 增加梯度裁剪强度（减小max_grad_norm）")
+                print("  3. 检查输入数据是否存在异常值")
+                raise
+            else:
+                raise
 
     print(f"\n✓ 训练完成")
 
