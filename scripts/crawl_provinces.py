@@ -31,7 +31,7 @@ from scripts.crawler_common import (
 
 # 配置路径
 CONFIG_PATH = PROJECT_ROOT / "data/seeds/seeds_sites.yaml"
-OUTPUT_BASE = PROJECT_ROOT / "corpus/raw/policy_provinces"
+OUTPUT_BASE = PROJECT_ROOT / "corpus/raw/policy_prov"
 CHECKPOINT_PATH = PROJECT_ROOT / "results/checkpoints/provinces.json"
 
 # 初始化日志
@@ -48,17 +48,38 @@ def load_config() -> List[Dict[str, Any]]:
     return provinces
 
 
-def extract_list_page_generic(html: str, base_url: str, province_name: str) -> List[str]:
+def extract_list_page_generic(html: str, base_url: str, province_config: Dict[str, Any]) -> List[str]:
     """
     通用列表页链接提取（支持多种网站结构）
-
-    策略：
-    1. 查找所有包含"政策"、"文件"、"通知"等关键词的链接
-    2. 过滤掉导航、页脚等非内容链接
-    3. 返回去重后的详情页URL列表
+    
+    Args:
+        html: 页面HTML
+        base_url: 基础URL
+        province_config: 省份配置（包含可选的 list_selector）
     """
     soup = BeautifulSoup(html, "lxml")
     links = []
+    province_name = province_config.get("region", "")
+
+    # 策略0：优先使用配置的自定义选择器
+    custom_selector = province_config.get("list_selector")
+    if custom_selector:
+        logger.info(f"[{province_name}] 使用自定义列表选择器: {custom_selector}")
+        try:
+            for item in soup.select(custom_selector):
+                # 尝试直接从item获取href，或者从item内部的a标签获取
+                a_tag = item if item.name == 'a' else item.find('a')
+                if a_tag and a_tag.has_attr('href'):
+                    full_url = urljoin(base_url, a_tag['href'])
+                    links.append(full_url)
+            
+            # 如果自定义选择器提取到了链接，直接返回（不再使用通用策略）
+            if links:
+                unique_links = list(dict.fromkeys(links))
+                logger.debug(f"[{province_name}] 自定义选择器提取到{len(unique_links)}个链接")
+                return unique_links
+        except Exception as e:
+            logger.error(f"[{province_name}] 自定义列表选择器执行失败: {e}")
 
     # 策略1：查找包含政策相关路径的链接
     for a in soup.find_all("a", href=True):
@@ -110,60 +131,80 @@ def extract_list_page_generic(html: str, base_url: str, province_name: str) -> L
 def extract_detail_page_generic(html: str, url: str, province_info: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """
     通用详情页信息提取（适应多种网站结构）
-
-    策略：
-    1. 多重选择器fallback提取标题
-    2. 多重选择器fallback提取正文
-    3. 尝试提取元数据（发布日期、发文机关、文号等）
-    4. 构建标准化文档对象
+    
+    Args:
+        html: 页面HTML
+        url: 页面URL
+        province_info: 省份配置（包含可选的 title_selector, content_selector, date_selector）
     """
     soup = BeautifulSoup(html, "lxml")
-
+    
     # === 提取标题 ===
     title = ""
-    title_selectors = [
-        ("h1", None),
-        ("div", {"class": "xxgk_content_title"}),  # 上海市
-        ("div", {"class": "title"}),
-        ("div", {"class": lambda x: x and "title" in str(x).lower()}),
-        ("span", {"class": "title"}),
-        ("p", {"class": "title"}),
-    ]
+    # 优先使用自定义选择器
+    if province_info.get("title_selector"):
+        try:
+            elem = soup.select_one(province_info["title_selector"])
+            if elem:
+                title = elem.get_text(strip=True)
+        except Exception as e:
+            logger.warning(f"自定义标题选择器失败: {e}")
 
-    for tag, attrs in title_selectors:
-        if attrs:
-            title_elem = soup.find(tag, attrs)
-        else:
-            title_elem = soup.find(tag)
+    if not title:
+        title_selectors = [
+            ("h1", None),
+            ("div", {"class": "xxgk_content_title"}),  # 上海市
+            ("div", {"class": "title"}),
+            ("div", {"class": lambda x: x and "title" in str(x).lower()}),
+            ("span", {"class": "title"}),
+            ("p", {"class": "title"}),
+        ]
 
-        if title_elem:
-            title = title_elem.get_text(strip=True)
-            if title:
-                break
+        for tag, attrs in title_selectors:
+            if attrs:
+                title_elem = soup.find(tag, attrs)
+            else:
+                title_elem = soup.find(tag)
+
+            if title_elem:
+                title = title_elem.get_text(strip=True)
+                if title:
+                    break
 
     # === 提取正文 ===
     content_html = ""
     content_text = ""
+    
+    # 优先使用自定义选择器
+    if province_info.get("content_selector"):
+        try:
+            elem = soup.select_one(province_info["content_selector"])
+            if elem:
+                content_html = str(elem)
+                content_text = elem.get_text(separator="\n", strip=True)
+        except Exception as e:
+            logger.warning(f"自定义正文选择器失败: {e}")
 
-    content_selectors = [
-        ("div", {"class": "xxgk_content_nr"}),  # 上海市
-        ("div", {"id": "ivs_content"}),  # 上海市备选
-        ("div", {"id": "content"}),
-        ("div", {"class": "content"}),
-        ("div", {"class": lambda x: x and "content" in str(x).lower()}),
-        ("div", {"id": "article"}),
-        ("div", {"class": "article"}),
-        ("td", {"class": "content"}),
-        ("div", {"id": "zoom"}),  # 常见政府网站内容区域
-    ]
+    if not content_text:
+        content_selectors = [
+            ("div", {"class": "xxgk_content_nr"}),  # 上海市
+            ("div", {"id": "ivs_content"}),  # 上海市备选
+            ("div", {"id": "content"}),
+            ("div", {"class": "content"}),
+            ("div", {"class": lambda x: x and "content" in str(x).lower()}),
+            ("div", {"id": "article"}),
+            ("div", {"class": "article"}),
+            ("td", {"class": "content"}),
+            ("div", {"id": "zoom"}),  # 常见政府网站内容区域
+        ]
 
-    for tag, attrs in content_selectors:
-        content_elem = soup.find(tag, attrs)
-        if content_elem:
-            content_html = str(content_elem)
-            content_text = content_elem.get_text(separator="\n", strip=True)
-            if content_text and len(content_text) > 50:  # 确保不是空内容
-                break
+        for tag, attrs in content_selectors:
+            content_elem = soup.find(tag, attrs)
+            if content_elem:
+                content_html = str(content_elem)
+                content_text = content_elem.get_text(separator="\n", strip=True)
+                if content_text and len(content_text) > 50:  # 确保不是空内容
+                    break
 
     # 如果仍未找到内容，尝试提取body中最大的文本块
     if not content_text or len(content_text) < 50:
@@ -179,21 +220,31 @@ def extract_detail_page_generic(html: str, url: str, province_info: Dict[str, An
     pub_date = ""
     issuer = ""
     doc_no = ""
+    
+    # 优先使用自定义选择器
+    if province_info.get("date_selector"):
+        try:
+            elem = soup.select_one(province_info["date_selector"])
+            if elem:
+                pub_date = elem.get_text(strip=True)
+        except Exception as e:
+            logger.warning(f"自定义日期选择器失败: {e}")
 
-    # 查找发布日期（多种格式）
-    date_patterns = [
-        ("span", {"class": lambda x: x and "date" in x.lower()}),
-        ("div", {"class": lambda x: x and "date" in x.lower()}),
-        ("td", {"class": lambda x: x and "date" in x.lower()}),
-        ("span", {"id": lambda x: x and "date" in x.lower()}),
-    ]
+    if not pub_date:
+        # 查找发布日期（多种格式）
+        date_patterns = [
+            ("span", {"class": lambda x: x and "date" in x.lower()}),
+            ("div", {"class": lambda x: x and "date" in x.lower()}),
+            ("td", {"class": lambda x: x and "date" in x.lower()}),
+            ("span", {"id": lambda x: x and "date" in x.lower()}),
+        ]
 
-    for tag, attrs in date_patterns:
-        date_elem = soup.find(tag, attrs)
-        if date_elem:
-            pub_date = date_elem.get_text(strip=True)
-            if pub_date:
-                break
+        for tag, attrs in date_patterns:
+            date_elem = soup.find(tag, attrs)
+            if date_elem:
+                pub_date = date_elem.get_text(strip=True)
+                if pub_date:
+                    break
 
     # 查找发文机关
     issuer_patterns = [
@@ -320,7 +371,7 @@ def crawl_province(
 
             # 提取详情页链接
             detail_urls = extract_list_page_generic(
-                response.text, current_list_url, province_name
+                response.text, current_list_url, province_config
             )
 
             total_links += len(detail_urls)
@@ -336,10 +387,40 @@ def crawl_province(
                     response = polite_get(session, detail_url)
                     response.raise_for_status()
 
-                    # 提取文档信息
-                    doc = extract_detail_page_generic(
-                        response.text, detail_url, province_config
-                    )
+                    # 检查是否为PDF
+                    content_type = response.headers.get("Content-Type", "").lower()
+                    if "application/pdf" in content_type:
+                        from scripts.crawler_common import extract_text_from_pdf
+                        pdf_text = extract_text_from_pdf(response.content)
+                        
+                        if not pdf_text:
+                            logger.warning(f"[{province_name}] [SKIP] PDF解析为空: {detail_url}")
+                            total_skipped += 1
+                            continue
+                            
+                        # 构建PDF文档对象
+                        doc = {
+                            "doc_id": f"prov_{adcode}_{sha256_text(detail_url)[:16]}",
+                            "title": detail_url.split("/")[-1], # 尝试从URL获取文件名作为标题
+                            "pub_date": datetime.now().strftime("%Y-%m-%d"), # PDF难以提取发布时间，暂用当前时间
+                            "issuer": province_name,
+                            "doc_no": "",
+                            "category": "省级政策",
+                            "status": "现行",
+                            "source_url": detail_url,
+                            "html": "", # PDF无HTML
+                            "content_text": pdf_text,
+                            "sha256": sha256_text(pdf_text),
+                            "retrieved_at": datetime.now().isoformat(),
+                            "region": f"CN-{adcode}",
+                            "province_name": province_name,
+                            "adcode_prov": adcode,
+                        }
+                    else:
+                        # 提取HTML文档信息
+                        doc = extract_detail_page_generic(
+                            response.text, detail_url, province_config
+                        )
 
                     if not doc:
                         total_skipped += 1

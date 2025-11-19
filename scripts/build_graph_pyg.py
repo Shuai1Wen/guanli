@@ -341,6 +341,10 @@ class GraphBuilder:
         # 计算相对时间（以2020-01-01为基准，单位：天）
         base_date = datetime(2020, 1, 1)
 
+        # 统计异常数量
+        failed_count = 0
+        out_of_range_count = 0
+
         for i, ts in enumerate(timestamps):
             if not ts:
                 # 如果时间戳为空，使用零向量
@@ -352,6 +356,15 @@ class GraphBuilder:
                 # 计算相对天数
                 days = (dt - base_date).days
 
+                # 限制days在合理范围内，防止数值溢出
+                # 范围：[-3650, 3650]对应[2010-01-01, 2030-01-01]
+                # 超出此范围的日期被视为异常
+                if abs(days) > 3650:
+                    if out_of_range_count < 5:  # 只打印前5个警告
+                        print(f"  警告：时间戳超出合理范围 '{ts}' (days={days})，将裁剪到[-3650, 3650]")
+                    out_of_range_count += 1
+                    days = max(-3650, min(3650, days))
+
                 # 生成正弦-余弦编码
                 for j in range(encoding_dim // 2):
                     freq = 1.0 / (10000 ** (2 * j / encoding_dim))
@@ -360,8 +373,24 @@ class GraphBuilder:
 
             except (ValueError, TypeError) as e:
                 # 如果解析失败，使用零向量
-                print(f"  警告：时间戳解析失败 '{ts}': {e}")
+                if failed_count < 5:  # 只打印前5个警告
+                    print(f"  警告：时间戳解析失败 '{ts}': {e}")
+                failed_count += 1
                 continue
+
+        # 汇总异常统计
+        if failed_count > 0:
+            print(f"  ⚠️  时间戳解析失败: {failed_count}/{num_nodes} ({failed_count/num_nodes*100:.1f}%)")
+        if out_of_range_count > 0:
+            print(f"  ⚠️  时间戳超出范围: {out_of_range_count}/{num_nodes} ({out_of_range_count/num_nodes*100:.1f}%)")
+
+        # 如果异常比例超过10%，报错
+        total_errors = failed_count + out_of_range_count
+        if total_errors > num_nodes * 0.1:
+            raise ValueError(
+                f"时间戳质量过低：{total_errors}/{num_nodes} ({total_errors/num_nodes*100:.1f}%)"
+                f"超过10%的时间戳存在问题，请检查数据质量"
+            )
 
         return time_encodings
 

@@ -115,6 +115,40 @@ def get_session(qps: float = 1.0) -> requests.Session:
     return session
 
 
+import io
+try:
+    import pdfplumber
+except ImportError:
+    pdfplumber = None
+
+# ... (existing imports)
+
+def extract_text_from_pdf(content: bytes) -> str:
+    """
+    从PDF二进制内容中提取文本
+    
+    参数:
+        content: PDF文件的二进制内容
+        
+    返回:
+        提取的文本内容
+    """
+    if pdfplumber is None:
+        logging.warning("未安装pdfplumber，无法解析PDF")
+        return ""
+        
+    text = ""
+    try:
+        with pdfplumber.open(io.BytesIO(content)) as pdf:
+            for page in pdf.pages:
+                page_text = page.extract_text()
+                if page_text:
+                    text += page_text + "\n"
+    except Exception as e:
+        logging.error(f"PDF解析失败: {e}")
+        
+    return text
+
 def polite_get(session: requests.Session, url: str, **kwargs) -> requests.Response:
     """
     礼貌的HTTP GET请求（带节流和随机抖动）
@@ -151,127 +185,12 @@ def polite_get(session: requests.Session, url: str, **kwargs) -> requests.Respon
     # 发起请求
     response = session.get(url, **kwargs)
     response.raise_for_status()  # 4xx/5xx抛出异常
+    
+    # 自动处理编码
+    if 'application/pdf' not in response.headers.get('Content-Type', ''):
+        response.encoding = response.apparent_encoding
 
     return response
-
-
-def sha256_text(text: str) -> str:
-    """
-    计算文本的SHA256哈希值（用于去重）
-
-    参数:
-        text: 待计算哈希的文本
-
-    返回:
-        64位十六进制哈希字符串
-    """
-    return hashlib.sha256(text.encode("utf-8", errors="ignore")).hexdigest()
-
-
-def save_json(obj: Dict[str, Any], path: Path) -> None:
-    """
-    保存JSON对象到文件
-
-    参数:
-        obj: 待保存的字典对象
-        path: 目标文件路径
-
-    说明:
-        - 自动创建父目录
-        - UTF-8编码，ensure_ascii=False（保留中文）
-        - 缩进2空格，便于阅读
-    """
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(obj, f, ensure_ascii=False, indent=2)
-
-
-def load_checkpoint(path: Path) -> Dict[str, Any]:
-    """
-    加载断点续爬状态
-
-    参数:
-        path: checkpoint文件路径
-
-    返回:
-        状态字典，如果文件不存在返回空字典
-    """
-    if path.exists():
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return {}
-
-
-def save_checkpoint(path: Path, state: Dict[str, Any]) -> None:
-    """
-    保存断点续爬状态
-
-    参数:
-        path: checkpoint文件路径
-        state: 状态字典
-
-    说明:
-        - 自动创建父目录
-        - 原子写入（先写临时文件，再重命名）
-    """
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-    # 原子写入：先写临时文件
-    temp_path = path.with_suffix(".tmp")
-    with open(temp_path, "w", encoding="utf-8") as f:
-        json.dump(state, f, ensure_ascii=False, indent=2)
-
-    # 重命名为正式文件
-    temp_path.replace(path)
-
-
-def init_logger(name: str = "crawler") -> logging.Logger:
-    """
-    初始化日志记录器
-
-    参数:
-        name: 日志记录器名称
-
-    返回:
-        配置好的Logger对象
-
-    说明:
-        - 日志级别: INFO
-        - 输出: 文件（results/logs/{name}.log）+ 控制台
-        - 格式: 时间戳 [级别] 消息
-        - UTF-8编码
-    """
-    logger = logging.getLogger(name)
-
-    # 避免重复添加handler
-    if logger.handlers:
-        return logger
-
-    logger.setLevel(logging.INFO)
-
-    # 文件处理器
-    log_file = LOGDIR / f"{name}.log"
-    fh = logging.FileHandler(log_file, encoding="utf-8")
-    fh.setLevel(logging.INFO)
-
-    # 控制台处理器
-    ch = logging.StreamHandler()
-    ch.setLevel(logging.INFO)
-
-    # 日志格式
-    formatter = logging.Formatter(
-        "%(asctime)s [%(levelname)s] %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S"
-    )
-    fh.setFormatter(formatter)
-    ch.setFormatter(formatter)
-
-    # 添加处理器
-    logger.addHandler(fh)
-    logger.addHandler(ch)
-
-    return logger
-
 
 if __name__ == "__main__":
     # 测试代码
@@ -286,6 +205,12 @@ if __name__ == "__main__":
     test_text = "测试文本内容"
     hash_value = sha256_text(test_text)
     logger.info(f"SHA256测试: {test_text} -> {hash_value[:16]}...")
+    
+    # 测试PDF解析 (如果安装了pdfplumber)
+    if pdfplumber:
+        logger.info("pdfplumber已安装，具备PDF解析能力")
+    else:
+        logger.warning("pdfplumber未安装，PDF解析功能不可用")
 
     # 测试checkpoint
     test_ckpt = Path("results/checkpoints/test.json")
