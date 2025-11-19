@@ -1473,3 +1473,136 @@ policy_features = torch.cat([text_embeddings, time_encodings], dim=1)  # (N, 416
 - 参数传递会变得复杂
 - 降低代码可读性
 - 违反"简单优于复杂"原则
+
+---
+
+## 代码审查与优化任务（2025-11-19）
+
+### 任务目标
+1. 检查所有代码的逻辑错误和维度不匹配问题
+2. 检查梯度失效或梯度连接失效问题
+3. 检查计算中可能出现的NaN问题
+4. 优化代码结构，减少回退机制，降低内存占用
+5. 更新README和文档
+
+### 代码审查发现的问题
+
+#### 🔴 P0级问题（必须修复）
+
+**问题1: train_hgt.py - in-place ReLU操作可能导致梯度计算问题**
+- 位置: train_hgt.py:145
+- 代码: `h_dict[node_type] = self.lin_dict[node_type](x).relu_()`
+- 问题: 使用in-place操作relu_()可能在某些情况下导致梯度计算问题和内存访问冲突
+- 严重性: 高
+- 修复方案: 改为非in-place的relu()
+
+**问题2: train_hgt.py - 缺少NaN检测机制**
+- 位置: train_hgt.py整个训练循环
+- 问题: 没有检测loss或梯度中NaN的机制，可能导致训练静默失败
+- 严重性: 高
+- 修复方案: 添加NaN检测和早停机制
+
+**问题3: train_hgt.py - 缺少梯度裁剪**
+- 位置: train_hgt.py:265
+- 代码: 反向传播后直接optimizer.step()
+- 问题: 没有梯度裁剪，可能导致梯度爆炸
+- 严重性: 高
+- 修复方案: 添加梯度裁剪torch.nn.utils.clip_grad_norm_
+
+#### 🟡 P1级问题（强烈建议修复）
+
+**问题4: train_hgt.py - 二元交叉熵可能产生NaN**
+- 位置: train_hgt.py:253-260
+- 代码: binary_cross_entropy_with_logits
+- 问题: 当logits值过大或过小时，可能产生NaN或Inf
+- 严重性: 中高
+- 修复方案: 添加logits裁剪，防止极端值
+
+**问题5: train_hgt.py - 负采样效率低且可能采样到正样本**
+- 位置: train_hgt.py:244-250
+- 代码: 每次训练都重新生成随机负样本
+- 问题:
+  1. 内存占用高（每个epoch都创建新张量）
+  2. 可能采样到真实正样本（导致标签矛盾）
+  3. 未利用GPU加速
+- 严重性: 中等
+- 修复方案:
+  1. 检查负样本是否与正样本冲突
+  2. 将负采样移到GPU上执行
+  3. 可选：使用更高效的负采样策略（如hard negative mining）
+
+**问题6: train_hgt.py - 设备转换效率低**
+- 位置: train_hgt.py:245-246
+- 代码: `torch.randint(0, data[src_type].x.shape[0], (num_neg,))`
+- 问题: 在CPU上生成随机索引，未指定设备，可能导致CPU-GPU数据传输
+- 严重性: 中等
+- 修复方案: 指定device参数，直接在目标设备上生成
+
+#### 🟢 P2级问题（可选优化）
+
+**问题7: build_graph_pyg.py - 时间编码可能产生极大值**
+- 位置: build_graph_pyg.py:356-359
+- 代码: sin/cos计算
+- 问题: 当days值很大时（如未来日期或历史久远日期），freq*days可能非常大
+- 严重性: 低
+- 修复方案: 添加days值的归一化或合理范围限制
+
+**问题8: build_graph_pyg.py - 异常处理过于宽泛**
+- 位置: build_graph_pyg.py:361-364
+- 代码: except (ValueError, TypeError) as e
+- 问题: 异常处理后仅打印警告，没有统计异常数量，可能导致数据质量问题被忽略
+- 严重性: 低
+- 修复方案: 记录异常统计，超过阈值（如10%）时报错
+
+**问题9: train_hgt.py - x_dict和edge_index_dict重复构建**
+- 位置: train_hgt.py:307-315
+- 问题: 每次训练都重建字典，虽然开销不大但可以优化
+- 严重性: 低
+- 修复方案: 在初始化时构建一次，后续复用
+
+### 维度匹配验证结果
+
+✅ **验证通过**: 所有维度匹配正确
+
+**build_graph_pyg.py维度流**:
+- policy节点: 384维文本嵌入 + 32维时间编码 = 416维
+- 其他节点: 384维文本嵌入
+
+**train_hgt.py维度处理**:
+- 使用Linear(-1, hidden_channels)懒惰初始化，自动推断输入维度
+- policy节点: 416 → 128维
+- 其他节点: 384 → 128维
+- 第一次前向传播时自动初始化权重矩阵
+
+**梯度连接验证**:
+- ✅ 残差连接正确（第2层开始添加，避免第1层维度不匹配）
+- ✅ Dropout正确应用在每层之后
+- ⚠️ 但存在in-place ReLU问题（见问题1）
+
+### 修复计划
+
+#### 第一批修复（P0级 - 立即执行）
+
+1. 修复in-place ReLU操作 → train_hgt.py:145
+2. 添加NaN检测机制 → train_hgt.py训练循环
+3. 添加梯度裁剪 → train_hgt.py:265附近
+
+#### 第二批修复（P1级 - 优先执行）
+
+4. 添加logits裁剪防止BCE产生NaN → train_hgt.py:241-242
+5. 优化负采样策略 → train_hgt.py:244-250
+6. 修复设备转换问题 → train_hgt.py:245-246
+
+#### 第三批优化（P2级 - 可选）
+
+7. 优化时间编码数值稳定性 → build_graph_pyg.py:356-359
+8. 改进异常处理机制 → build_graph_pyg.py:361-364
+9. 减少重复字典构建 → train_hgt.py:307-315
+
+### 下一步行动
+
+1. ✅ 完成代码审查分析
+2. 🔄 开始修复P0级问题
+3. ⏳ 修复P1级问题
+4. ⏳ 更新README文档
+5. ⏳ 验证修改后的代码
