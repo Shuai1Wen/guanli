@@ -275,26 +275,6 @@ provinces:
     max_pages: 5
     verified: false
 
-  - name: 北京市科委/中关村管委
-    region: 北京市
-    adcode_prov: 11
-    homepage: "https://kw.beijing.gov.cn/"
-    # 待二次分析后补充详细配置
-
-  - name: 上海市科委
-    region: 上海市
-    adcode_prov: 31
-    homepage: "https://stcsm.sh.gov.cn/"
-
-  - name: 浙江省科技厅
-    region: 浙江省
-    adcode_prov: 33
-    homepage: "http://kjt.zj.gov.cn/"
-
-  - name: 江苏省科技厅
-    region: 江苏省
-    adcode_prov: 32
-    homepage: "http://kxjst.jiangsu.gov.cn/"
 
 # ==================== 统计局指标 ====================
 nbs_indicators:
