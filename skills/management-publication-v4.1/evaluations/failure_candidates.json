@@ -1,0 +1,11 @@
+[
+  {
+    "pattern_code": "RESULT_DRIVEN_STORY",
+    "occurrences": 1,
+    "independent_projects": ["regional-innovation-policy"],
+    "severities": ["P0"],
+    "promotable": true,
+    "rule_change_status": "CANDIDATE",
+    "note": "Promotion still requires human/agent review and regression testing; this script never edits Skill rules."
+  }
+]

@@ -1,0 +1,15 @@
+{
+  "version": "4.1.0-rc1",
+  "skills": 8,
+  "files": 110,
+  "projects": [
+    "regional-innovation-policy",
+    "iclr-project",
+    "bioinformatics-project",
+    "_template"
+  ],
+  "validation": "PASS",
+  "runtime_smoke_tests": "PASS",
+  "global_self_modification": "DISABLED_BY_DESIGN",
+  "failure_promotion": "CANDIDATE_ONLY_AFTER_CROSS_PROJECT_OR_P0_AND_REGRESSION"
+}
