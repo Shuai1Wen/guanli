@@ -1,0 +1,4 @@
+interface:
+  display_name: "Reverse Engineer Anchor Paper"
+  short_description: "Deep-read a verified anchor and extract its research DNA"
+  default_prompt: "Use $mgmt-reverse-engineer-paper to reconstruct this verified management paper's problem, theory, variables, design, evidence chain, and smallest defensible extension."

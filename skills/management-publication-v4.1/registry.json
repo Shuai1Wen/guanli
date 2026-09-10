@@ -1,0 +1,15 @@
+{
+  "name": "management-publication-skills",
+  "version": "4.1.0-rc1",
+  "skills": [
+    {"name":"mgmt-publish-router","path":"skills/mgmt-publish-router","memory_aware":true},
+    {"name":"mgmt-ground-question","path":"skills/mgmt-ground-question","memory_aware":true},
+    {"name":"mgmt-reverse-engineer-paper","path":"skills/mgmt-reverse-engineer-paper","memory_aware":true},
+    {"name":"mgmt-design-study","path":"skills/mgmt-design-study","memory_aware":true},
+    {"name":"mgmt-build-evidence","path":"skills/mgmt-build-evidence","memory_aware":true},
+    {"name":"mgmt-write-paper","path":"skills/mgmt-write-paper","memory_aware":true},
+    {"name":"mgmt-target-submit","path":"skills/mgmt-target-submit","memory_aware":true},
+    {"name":"mgmt-revise-paper","path":"skills/mgmt-revise-paper","memory_aware":true}
+  ],
+  "project_memory":{"optional_for_narrow_tasks":true,"recommended_for_long_running_projects":true,"global_self_modification":false}
+}

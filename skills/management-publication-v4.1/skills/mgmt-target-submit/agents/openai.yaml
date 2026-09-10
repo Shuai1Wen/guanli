@@ -1,0 +1,4 @@
+interface:
+  display_name: "Target and Submit Management Paper"
+  short_description: "Verify journal fit and prepare a grounded submission package"
+  default_prompt: "Use $mgmt-target-submit to verify journal fit with recent comparable papers and prepare the next submission package without changing the frozen study."

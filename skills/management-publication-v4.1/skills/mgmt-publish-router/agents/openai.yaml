@@ -1,0 +1,4 @@
+interface:
+  display_name: "Management Publication Router"
+  short_description: "Route broad management projects to the next publication step"
+  default_prompt: "Use $mgmt-publish-router to identify and execute the next concrete publication step for this mixed-stage management research project."

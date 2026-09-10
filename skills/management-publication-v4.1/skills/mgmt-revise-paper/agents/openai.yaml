@@ -1,0 +1,6 @@
+interface:
+  display_name: Revise Management Paper
+  short_description: Turn reviewer feedback into publication-ready revisions
+  default_prompt: Use $mgmt-revise-paper to convert these advisor or reviewer comments
+    into prioritized research changes, revised manuscript text, and a resubmission
+    plan.

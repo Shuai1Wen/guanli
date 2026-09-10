@@ -1,0 +1,4 @@
+interface:
+  display_name: "Write Management Paper"
+  short_description: "Write evidence-bounded, natural Chinese management-paper prose"
+  default_prompt: "Use $mgmt-write-paper to write this management-paper section in natural Chinese while preserving the frozen research question, constructs, evidence, and claim boundaries."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Design Management Study"
+  short_description: "Match theory, construct, data, and method to the paper archetype"
+  default_prompt: "Use $mgmt-design-study to classify the paper archetype and freeze a credible theory, construct, data, and empirical research contract."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Build Management Evidence"
+  short_description: "Build a credible evidence chain without post-hoc story changes"
+  default_prompt: "Use $mgmt-build-evidence to classify these analyses, prevent selective reporting, and build the shortest evidence chain that supports the frozen management-paper thesis."

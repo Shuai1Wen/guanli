@@ -1,0 +1,4 @@
+interface:
+  display_name: "Ground Management Paper"
+  short_description: "Ground one management question in a real literature and anchor"
+  default_prompt: "Use $mgmt-ground-question to define the research object, find the substantive academic mountain and anchor, test novelty, and freeze one publishable management-paper question."
